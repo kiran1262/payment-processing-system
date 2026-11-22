@@ -1,7 +1,7 @@
 # Production Readiness Plan
 
 **Project:** Payment Processing System  
-**Tracking branch:** `fix/payment-processing-review`  
+**Tracking PR:** [#2 — production-readiness roadmap](https://github.com/kiran1262/payment-processing-system/pull/2)  
 **Status:** Planning only — none of the production-readiness items below is implemented by this document.  
 **Rule:** Work on one item at a time. Do not combine unrelated security, schema, and payment-accounting changes into one large patch.
 
@@ -188,7 +188,7 @@ The current project remains a simulation until a real provider integration and i
 
 ## Progress
 
-- [x] Existing payment demo bug-fix PR opened and CI verified on its latest commit.
+- [x] Existing payment demo bug-fix PR #1 merged; its pytest CI run passed.
 - [ ] 0. Alembic migration foundation
 - [ ] 1. Authentication, authorization, and tenant isolation
 - [ ] 2. API rate limiting
