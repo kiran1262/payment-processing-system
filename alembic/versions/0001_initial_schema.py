@@ -36,7 +36,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("payment_id"),
     )
     op.create_index("ix_payments_id", "payments", ["id"], unique=False)
-    op.create_index("ix_payments_payment_id", "payments", ["payment_id"], unique=False)
+    op.create_index("ix_payments_payment_id", "payments", ["payment_id"], unique=True)
 
 
 def downgrade() -> None:
