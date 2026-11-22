@@ -12,16 +12,18 @@ ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = ROOT / "alembic.ini"
 
 
-def migration_config(database_url: str) -> Config:
+def migration_config(database_url: str, monkeypatch) -> Config:
+    # Ensure tests never follow a developer or CI DATABASE_URL to a real database.
+    monkeypatch.setenv("DATABASE_URL", database_url)
     config = Config(str(ALEMBIC_INI))
     config.set_main_option("script_location", str(ROOT / "alembic"))
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     return config
 
 
-def test_fresh_database_upgrades_to_head_and_matches_models(tmp_path):
+def test_fresh_database_upgrades_to_head_and_matches_models(tmp_path, monkeypatch):
     database_url = f"sqlite:///{tmp_path / 'fresh.db'}"
-    config = migration_config(database_url)
+    config = migration_config(database_url, monkeypatch)
 
     command.upgrade(config, "head")
 
@@ -39,7 +41,7 @@ def test_fresh_database_upgrades_to_head_and_matches_models(tmp_path):
         engine.dispose()
 
 
-def test_existing_demo_schema_can_be_baselined_without_losing_payments(tmp_path):
+def test_existing_demo_schema_can_be_baselined_without_losing_payments(tmp_path, monkeypatch):
     database_url = f"sqlite:///{tmp_path / 'existing.db'}"
     engine = create_engine(database_url)
     payment = Payment(
@@ -62,7 +64,7 @@ def test_existing_demo_schema_can_be_baselined_without_losing_payments(tmp_path)
             session.commit()
             payment_id = payment.payment_id
 
-        config = migration_config(database_url)
+        config = migration_config(database_url, monkeypatch)
         command.stamp(config, "0001_initial_schema")
         command.upgrade(config, "head")
         command.check(config)
