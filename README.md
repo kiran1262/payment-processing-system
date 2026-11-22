@@ -45,7 +45,7 @@ The application is intended for local learning. It is **not production-ready**: 
 ## Run on Windows PowerShell
 
     py -3.11 -m venv .venv
-    .\\.venv\\Scripts\\Activate.ps1
+    .\.venv\Scripts\Activate.ps1
     python -m pip install --upgrade pip
     pip install -r requirements.txt
     alembic upgrade head
