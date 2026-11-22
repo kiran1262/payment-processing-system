@@ -72,6 +72,13 @@ def test_invalid_email_is_rejected(client):
     assert response.status_code == 422
 
 
+def test_email_longer_than_database_column_is_rejected(client):
+    long_email = f'{"a" * 64}@{"b" * 63}.{"c" * 52}'
+    response = client.post("/api/payments", json=payload(customer_email=long_email))
+    assert len(long_email) > 180
+    assert response.status_code == 422
+
+
 def test_payment_list_rejects_invalid_limits(client):
     assert client.get("/api/payments?limit=0").status_code == 422
     assert client.get("/api/payments?limit=-1").status_code == 422
