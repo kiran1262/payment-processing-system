@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment | Payment Processing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="#"><span class="brand-icon">✦</span><span>Payment<small>PAYMENT INFRASTRUCTURE</small></span></a>
+    <div class="workspace"><span class="avatar">K</span><span><b>Kirankumar's Store</b><small>Test workspace</small></span><span class="chevron">⌄</span></div>
+    <p class="nav-label">WORKSPACE</p>
+    <a class="nav active" href="#overview"><span>▦</span> Overview</a>
+    <a class="nav" href="#transactions"><span>⇄</span> Transactions</a>
+    <a class="nav" href="#payments"><span>＋</span> Create payment</a>
+    <p class="nav-label space">MANAGE</p>
+    <a class="nav" href="#analytics"><span>▥</span> Analytics</a>
+    <a class="nav" href="#developer"><span>⌘</span> Developers</a>
+    <div class="sidebar-bottom"><div class="secure-mini">◈ <span><b>Protected environment</b><small>Demo mode · No real money</small></span></div><div class="profile"><span class="avatar">KS</span><span><b>Kirankumar</b><small>Administrator</small></span><span class="dots">•••</span></div></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <b>Overview</b></div><div class="top-actions"><span class="live"><i></i> All systems operational</span><button class="icon-btn" title="Notifications">♧</button><span class="avatar small">KS</span></div></header>
+    <section class="hero" id="overview">
+      <div><div class="eyebrow"><span class="status-dot"></span> PAYMENT CONTROL CENTER</div><h1>Payments, <span class="gradient-text">simplified.</span></h1><p>Move money with confidence. Monitor transactions, track performance, and manage every payment in one place.</p><div class="hero-actions"><a class="primary-btn" href="#payments">＋ Create payment</a><a class="ghost-btn" href="#transactions">View transactions <span>↗</span></a></div></div>
+      <div class="hero-art"><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="globe">◎<span>✦</span></div><div class="floating-card"><span class="card-chip">▰</span><b>••••  ••••  ••••  4829</b><small>SECURE PAYMENT</small><strong>₹ 24,850.00</strong><em>✓ Verified</em></div><div class="float-check">✓</div></div>
+    </section>
+    <section class="stat-grid">
+      <article class="stat-card"><div class="stat-top"><span>Total transactions</span><span class="stat-icon blue">⇄</span></div><strong id="totalTransactions">0</strong><small class="positive">↗ Lifetime activity</small><div class="spark blue-spark">▁▃▂▅▄▆▅█</div></article>
+      <article class="stat-card"><div class="stat-top"><span>Successful payments</span><span class="stat-icon green">✓</span></div><strong id="successfulPayments">0</strong><small class="positive">↗ Completed payments</small><div class="spark green-spark">▂▃▅▄▆▅▇█</div></article>
+      <article class="stat-card"><div class="stat-top"><span>Payment volume</span><span class="stat-icon purple">₹</span></div><strong id="paymentVolume">₹0</strong><small class="muted">Successful payment value</small><div class="spark purple-spark">▁▂▄▃▅▆▅█</div></article>
+      <article class="stat-card"><div class="stat-top"><span>Success rate</span><span class="stat-icon orange">↗</span></div><strong id="successRate">0%</strong><small class="positive">↗ Transaction reliability</small><div class="spark orange-spark">▃▂▄▅▄▆▇█</div></article>
+    </section>
+    <section class="content-grid" id="analytics">
+      <article class="panel chart-panel"><div class="panel-heading"><div><h2>Payment activity</h2><p>Transaction performance overview</p></div><span class="period">All time⌄</span></div><div class="chart-legend"><span><i class="legend-blue"></i> Successful</span><span><i class="legend-purple"></i> Volume</span></div><div class="chart"><div class="y-labels"><span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span></div><svg viewBox="0 0 650 190" preserveAspectRatio="none" role="img" aria-label="Decorative activity chart"><defs><linearGradient id="area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#258bff" stop-opacity=".35"/><stop offset="1" stop-color="#258bff" stop-opacity="0"/></linearGradient></defs><path d="M0 142 C45 132 45 105 90 116 S150 90 190 105 S250 48 290 75 S355 95 390 62 S450 83 490 48 S550 70 590 30 S625 50 650 18 L650 190 L0 190Z" fill="url(#area)"/><path d="M0 142 C45 132 45 105 90 116 S150 90 190 105 S250 48 290 75 S355 95 390 62 S450 83 490 48 S550 70 590 30 S625 50 650 18" fill="none" stroke="#35a5ff" stroke-width="3" vector-effect="non-scaling-stroke"/></svg><div class="x-labels"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div></div></article>
+      <article class="panel methods-panel"><div class="panel-heading"><div><h2>Payment methods</h2><p>How customers pay</p></div><span class="more">•••</span></div><div class="donut-wrap"><div class="donut"><div><b id="methodCount">0</b><small>payments</small></div></div><div class="method-legend"><span><i class="m-blue"></i> Cards <b id="cardCount">0</b></span><span><i class="m-green"></i> UPI <b id="upiCount">0</b></span><span><i class="m-purple"></i> Wallets <b id="walletCount">0</b></span><span><i class="m-orange"></i> Net banking <b id="netCount">0</b></span></div></div></article>
+    </section>
+    <section class="panel transactions-panel" id="transactions"><div class="panel-heading"><div><h2>Recent transactions</h2><p>A live view of your latest payment activity</p></div><button class="outline-btn" id="refreshBtn">↻ Refresh</button></div><div class="table-wrap"><table><thead><tr><th>PAYMENT</th><th>CUSTOMER</th><th>DATE</th><th>METHOD</th><th>AMOUNT</th><th>STATUS</th><th></th></tr></thead><tbody id="transactionRows"><tr><td colspan="7" class="empty">No transactions yet. Create your first payment.</td></tr></tbody></table></div></section>
+    <section class="panel create-panel" id="payments"><div class="panel-heading"><div><h2>Create a payment</h2><p>Run a safe simulated transaction in the demo environment</p></div><span class="demo-pill">● DEMO MODE</span></div>
+      <form id="paymentForm"><div class="form-grid"><label>Customer name<input name="customer_name" placeholder="e.g. Alex Morgan" required minlength="2"></label><label>Email address<input name="customer_email" type="email" placeholder="alex@example.com" required></label><label>Amount (INR)<div class="amount-input"><span>₹</span><input name="amount" type="number" min="1" max="500000" step=".01" placeholder="2499.00" required></div></label><label>Payment method<select name="method"><option>UPI</option><option>Card</option><option>Wallet</option><option>Net Banking</option></select></label><label class="full">Description<input name="description" placeholder="Order payment"></label></div><div class="form-footer"><span>◈ Encrypted demo request · No real funds move</span><button class="primary-btn" type="submit" id="payBtn">Process payment <span>→</span></button></div><p id="formMessage" class="form-message" role="status"></p></form>
+    </section>
+    <footer><span>✦ Payment <small>PAYMENT INFRASTRUCTURE</small></span><span>Built for secure payment experiences · Educational demo</span><a href="/docs" target="_blank">API documentation ↗</a></footer>
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body></html>
