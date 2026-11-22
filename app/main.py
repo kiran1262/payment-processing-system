@@ -1,4 +1,3 @@
-from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
 
@@ -9,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from .database import Base, engine, get_db
+from .database import get_db
 from .models import Payment
 from .schemas import PaymentCreate
 from .services import IdempotencyConflictError, create_payment, dashboard_stats, refund_payment
@@ -17,15 +16,7 @@ from .services import IdempotencyConflictError, create_payment, dashboard_stats,
 logger = logging.getLogger(__name__)
 BASE = Path(__file__).resolve().parent.parent
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Kept for the self-contained demo. Production deployments should use Alembic.
-    Base.metadata.create_all(bind=engine)
-    yield
-
-
-app = FastAPI(title="Payment Processing System", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Payment Processing System", version="1.1.0")
 app.mount("/static", StaticFiles(directory=BASE / "frontend"), name="static")
 
 
