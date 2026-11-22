@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 class PaymentCreate(BaseModel):
     customer_name: str = Field(min_length=2, max_length=120)
-    customer_email: EmailStr
+    customer_email: EmailStr = Field(max_length=180)
     amount: Decimal = Field(
         gt=Decimal("0"), le=Decimal("500000"), max_digits=8, decimal_places=2
     )
