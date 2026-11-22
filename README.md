@@ -17,9 +17,9 @@ The application is intended for local learning. It is **not production-ready**: 
 - Idempotency-Key support with request-payload conflict detection
 - Exact decimal-to-paise conversion and email validation
 - Bounded payment listing and database-safe refund state transition
-- SQLite database created automatically for the local demo
+- Explicit Alembic database migrations; application startup does not create or alter tables
 - FastAPI interactive API documentation at /docs
-- Pytest suite for payment, validation, idempotency, and refund flows
+- Pytest suite for payment, validation, idempotency, refund, and migration flows
 
 ## Architecture
 
@@ -45,16 +45,39 @@ The application is intended for local learning. It is **not production-ready**: 
 ## Run on Windows PowerShell
 
     py -3.11 -m venv .venv
-    .\.venv\Scripts\Activate.ps1
+    .\\.venv\\Scripts\\Activate.ps1
     python -m pip install --upgrade pip
     pip install -r requirements.txt
+    alembic upgrade head
     python -m uvicorn app.main:app --reload
 
+For macOS/Linux, activate the virtual environment with source .venv/bin/activate, then run the same pip, Alembic, and Uvicorn commands.
+
 Open http://127.0.0.1:8000 for the dashboard and http://127.0.0.1:8000/docs for API docs.
+
+## Database migrations
+
+Alembic is the only schema-management path used by the application. Starting FastAPI no longer runs Base.metadata.create_all() or silently changes a database schema.
+
+- **New/empty database:** run alembic upgrade head before starting the application.
+- **Existing database created by the previous demo:** stop the application and make a verified backup first. Confirm that its payments table matches the initial migration (columns, types, nullability, primary/unique constraints, and indexes). Then run alembic stamp 0001_initial_schema to record the baseline without executing table-creation SQL, followed by alembic upgrade head. The stamp command does not inspect or repair the schema; do not run it against a database whose schema has not been verified.
+- **Deployment database:** set DATABASE_URL to the SQLAlchemy URL for the target database and run alembic upgrade head as an explicit deployment/release step before deploying application code. Keep the URL and credentials in the deployment secret manager; never commit credentials.
+- **Rollback:** inspect the target revision and backup before using alembic downgrade. A downgrade can remove schema objects and data. The initial migration downgrade drops the payments table and is destructive.
+
+Useful commands:
+
+    alembic current
+    alembic history
+    alembic upgrade head
+    alembic check
+
+The application and Alembic both read DATABASE_URL. SQLite is the local default. The SQLAlchemy engine only applies SQLite-specific connection options to SQLite URLs.
 
 ## Run tests
 
     python -m pytest -v
+
+The migration tests cover a fresh database upgrade, schema drift against ORM metadata, and baselining an existing demo schema while preserving its payment row.
 
 ## API endpoints
 
@@ -100,7 +123,6 @@ Before any real payment integration or public deployment:
 - Integrate an authorized payment service provider using its official SDK and sandbox.
 - Add server-side authentication, authorization, tenant isolation, and API rate limiting.
 - Verify signed provider webhooks and make webhook processing idempotent.
-- Introduce Alembic migrations and a production database such as PostgreSQL.
 - Implement a proper double-entry ledger, reconciliation, audit logs, and monitoring.
 - Add secrets management, TLS, secure deployment configuration, and security review.
 - Never store raw card data or CVV; follow the provider's current compliance requirements.
@@ -110,6 +132,11 @@ Do not make the demo publicly accessible until the above controls are implemente
 ## Project structure
 
     payment-processing-system/
+    ├── alembic/
+    │   ├── env.py
+    │   ├── script.py.mako
+    │   └── versions/
+    │       └── 0001_initial_schema.py
     ├── app/
     │   ├── __init__.py
     │   ├── config.py
@@ -124,7 +151,9 @@ Do not make the demo publicly accessible until the above controls are implemente
     │   └── app.js
     ├── tests/
     │   ├── conftest.py
+    │   ├── test_migrations.py
     │   └── test_payments.py
+    ├── alembic.ini
     ├── .gitignore
     ├── README.md
     └── requirements.txt
