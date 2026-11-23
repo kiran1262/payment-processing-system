@@ -154,9 +154,32 @@ These are conservative demo defaults, not universal production recommendations. 
 | Date | Change | Tests / evidence | Status |
 |---|---|---|---|
 | 2026-11-23 | Created this master record and began source audit on a branch from merged Phase 1 `main`. | PR #4 verified merged; source inventory captured. | Complete |
-| 2026-11-23 | Added atomic fixed-window limiter using shared SQL database upserts, rate-limit bucket model/migration 0003, route dependencies, safe 429/503 behavior, frontend Retry-After guidance, and focused tests. | Code and tests committed on `feat/phase-2-rate-limiting-abuse-controls`; CI run pending. | In progress |
+| 2026-11-23 | Added atomic fixed-window limiter using shared SQL database upserts, rate-limit bucket model/migration 0003, route dependencies, safe 429/503 behavior, frontend Retry-After guidance, and focused tests. | Initial CI run: 41 passed; expanded route coverage, HMAC identity pseudonymization, and frontend syntax CI check added afterward. Latest run pending. | In progress |
 
-## 9. Current implementation details and residual review\n\n### Implemented in the working branch\n\n- Added `RateLimitBucket` model and Alembic revision `0003_rate_limit_buckets`.\n- Added `app/rate_limit.py` with atomic SQLite/PostgreSQL upsert counters, HMAC-SHA256 bucket-key pseudonyms (keyed by `RATE_LIMIT_HASH_SECRET`), fixed windows, 429 responses with `Retry-After`, fail-closed 503 behavior when the limiter store is unavailable, and an explicit expired-bucket cleanup function.\n- Added policies: registration 5/hour/IP; login 10/15 minutes/IP; member creation 10/hour/user+tenant; payment creation 20/minute/user+tenant; refunds 5/minute/user+tenant; reads 120/minute/user+tenant.\n- Applied limits to registration, login, member creation, profile, dashboard, payment list/detail/create, and refund routes. Health and readiness probes remain exempt.\n- Frontend displays retry guidance for 429. Payment idempotency key remains in session storage after a rejected request.\n- Added tests for fixed-window enforcement/reset, hashed bucket identifiers, cleanup, login/IP throttling, forwarded-header spoof resistance, payment throttling, per-user isolation, read limits, and fail-closed storage errors.\n\n### Residual risks / items not yet proven\n\n- GitHub Actions on the initial implementation commit passed 41 tests; additional route coverage and the HMAC key change are being added, so the latest head must pass CI again before Phase 2 can be marked complete.\n- Fixed-window counters permit a burst across adjacent window boundaries; token-bucket/sliding-window behavior may be preferable for a production deployment.\n- The shared limiter currently uses the primary database. This creates database contention and means limiter availability is coupled to database availability.\n- Expired-bucket cleanup is exposed as a function but no scheduler/maintenance command is wired yet; production operations must schedule it.\n- `RATE_LIMIT_HASH_SECRET` must be set to a high-entropy secret in production; the built-in fallback is development-only. Rotating it resets the effective rate-limit key namespace.\n- Client IP uses the direct ASGI socket peer. Forwarded headers are intentionally ignored; deployments behind a reverse proxy need explicit trusted-proxy configuration at the edge.\n- Login is throttled by IP, not by account/email. Distributed password spraying across many IPs remains a residual risk; account-scoped throttling must be designed carefully to avoid attacker-induced account lockout.\n- Webhook ingress does not exist and remains a Phase 5 concern.\n- SQLite tests do not prove PostgreSQL multi-worker contention or production concurrency; Phase 6 integration tests remain required.\n\n## 10. Known limitations and explicit non-goals
+## 9. Current implementation details and residual review
+
+### Implemented in the working branch
+
+- Added `RateLimitBucket` model and Alembic revision `0003_rate_limit_buckets`.
+- Added `app/rate_limit.py` with atomic SQLite/PostgreSQL upsert counters, HMAC-SHA256 bucket-key pseudonyms (keyed by `RATE_LIMIT_HASH_SECRET`), fixed windows, 429 responses with `Retry-After`, fail-closed 503 behavior when the limiter store is unavailable, and an explicit expired-bucket cleanup function.
+- Added policies: registration 5/hour/IP; login 10/15 minutes/IP; member creation 10/hour/user+tenant; payment creation 20/minute/user+tenant; refunds 5/minute/user+tenant; reads 120/minute/user+tenant.
+- Applied limits to registration, login, member creation, profile, dashboard, payment list/detail/create, and refund routes. Health and readiness probes remain exempt.
+- Frontend displays retry guidance for 429. Payment idempotency key remains in session storage after a rejected request.
+- Added tests for fixed-window enforcement/reset, hashed bucket identifiers, cleanup, login/IP throttling, forwarded-header spoof resistance, payment throttling, per-user isolation, read limits, and fail-closed storage errors.
+
+### Residual risks / items not yet proven
+
+- GitHub Actions on the initial implementation commit passed 41 tests; additional route coverage and the HMAC key change are being added, so the latest head must pass CI again before Phase 2 can be marked complete.
+- Fixed-window counters permit a burst across adjacent window boundaries; token-bucket/sliding-window behavior may be preferable for a production deployment.
+- The shared limiter currently uses the primary database. This creates database contention and means limiter availability is coupled to database availability.
+- Expired-bucket cleanup is exposed as a function but no scheduler/maintenance command is wired yet; production operations must schedule it.
+- `RATE_LIMIT_HASH_SECRET` must be set to a high-entropy secret in production; the built-in fallback is development-only. Rotating it resets the effective rate-limit key namespace.
+- Client IP uses the direct ASGI socket peer. Forwarded headers are intentionally ignored; deployments behind a reverse proxy need explicit trusted-proxy configuration at the edge.
+- Login is throttled by IP, not by account/email. Distributed password spraying across many IPs remains a residual risk; account-scoped throttling must be designed carefully to avoid attacker-induced account lockout.
+- Webhook ingress does not exist and remains a Phase 5 concern.
+- SQLite tests do not prove PostgreSQL multi-worker contention or production concurrency; Phase 6 integration tests remain required.
+
+## 10. Known limitations and explicit non-goals
 
 - No webhook endpoint in Phase 2; provider-specific ingress controls belong to Phase 5.
 - No real payment processing, card data, UPI credentials, or funds movement.
