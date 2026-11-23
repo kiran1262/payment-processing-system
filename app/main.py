@@ -114,6 +114,7 @@ def create_member(
     payload: MemberCreate,
     owner: User = Depends(require_owner),
     db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("member_create")),
 ):
     member = User(
         tenant_id=owner.tenant_id, full_name=payload.full_name.strip(),
@@ -144,6 +145,7 @@ def list_payments(
     limit: int = Query(default=100, ge=1, le=250),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("read")),
 ):
     rows = db.scalars(select(Payment).where(Payment.tenant_id == user.tenant_id)
         .order_by(Payment.id.desc()).limit(limit)).all()
@@ -156,6 +158,7 @@ def new_payment(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=1, max_length=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("payment_create")),
 ):
     try:
         payment, replayed = create_payment(db, payload, idempotency_key, user.tenant_id)
