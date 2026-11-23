@@ -106,16 +106,15 @@ The following are confirmed from the current `main` source snapshot unless marke
 - Return `Retry-After` as integer seconds and avoid leaking raw identity/key data.
 - Ensure dependency ordering means unauthenticated requests are rejected before consuming authenticated user buckets, and valid user identity is resolved before tenant/user limits are applied.
 
-## 6. Proposed implementation direction — pending final code review
+## 6. Selected implementation design and operational trade-offs
 
 Preferred initial approach: **database-backed atomic fixed-window buckets** in the already-configured shared SQL database, provided implementation can use dialect-native atomic upsert for SQLite and PostgreSQL without lost updates. This avoids adding a new external Redis service for the educational local setup while remaining shared across workers using the same database.
 
-Before committing to this choice, verify:
-- SQLAlchemy and SQLite/PostgreSQL dialect support in installed versions.
-- Atomic upsert semantics for both supported dialects.
-- How to keep a rate-limit increment transaction isolated from payment business transactions.
-- Lock/contention behavior and handling of `SQLAlchemyError`.
-- Migration compatibility and test behavior on both dialects.
+The initial design is implemented. Verification and remaining operational trade-offs are recorded below:
+- SQLite and PostgreSQL use dialect-native atomic upserts; stale requests cannot move the stored window backwards.
+- Rate-limit increments commit independently before business handlers execute.
+- Limiter storage errors fail closed with a generic 503.
+- PostgreSQL multi-process atomicity is exercised in CI; deployment throughput/contention still needs a target-environment benchmark.
 
 If the database-backed approach cannot meet atomicity or outage isolation, stop and document the reason before switching to Redis or a gateway-managed limiter. Do not claim production-grade distributed limiting based only on SQLite tests.
 
@@ -144,13 +143,13 @@ These are conservative demo defaults, not universal production recommendations. 
 - [x] Fixed-window reset and retry countdown are deterministic under an injected timestamp.
 - [x] Concurrent increments cannot exceed the configured allowance through lost updates (SQLite threaded regression and PostgreSQL multi-process CI).
 - [x] Limiter storage failure fails closed with generic 503 and `Retry-After: 5`.
-- [x] Spoofed `X-Forwarded-For` is ignored; direct ASGI socket peer is used.
+- [x] Forwarded headers are ignored when no trusted proxy is configured; explicitly trusted proxy chains resolve to the first untrusted hop.
 - [x] Expired bucket cleanup removes expired buckets; a live bucket remains until its expiry.
 - [x] Frontend reads `Retry-After` and displays retry guidance; payment idempotency persistence remains covered by the existing Phase 1 regression test.
 - [x] Existing auth, tenant, migration, payment, refund, and idempotency tests pass in the full suite.
 - [x] Alembic fresh upgrade and model drift check pass in the migration test suite.
 
-### Not yet proven / remaining acceptance work
+### Remaining deployment-specific acceptance work
 
 - [x] PostgreSQL multi-process concurrency test added to CI (PostgreSQL 16 service); deployment-specific throughput benchmarking remains an operational gate.
 - [x] Added bounded cleanup command python -m app.maintenance purge-rate-limits; scheduler wiring remains deployment-specific.
@@ -162,18 +161,22 @@ These are conservative demo defaults, not universal production recommendations. 
 | Date | Change | Tests / evidence | Status |
 |---|---|---|---|
 | 2026-11-23 | Created this master record and began source audit on a branch from merged Phase 1 `main`. | PR #4 verified merged; source inventory captured. | Complete |
-| 2026-11-23 | Added atomic fixed-window limiter using shared SQL database upserts, rate-limit bucket model/migration 0003, route dependencies, safe 429/503 behavior, frontend Retry-After guidance, and focused tests. | Latest checked code/test head `49efce55c993a246ba4de1874381afc2cf38ed68`: **47 passed, 1 warning**; frontend `node --check` passed. | In progress |
+| 2026-11-23 | Added the initial atomic fixed-window limiter, migration 0003, route dependencies, safe 429/503 behavior, frontend guidance, and initial tests. | Baseline before the follow-up hardening batch: 47 passed, 1 warning. | Baseline complete |
+| 2026-11-23 | Hardened monotonic window updates, startup policy validation, missing-peer handling, trusted proxy chain resolution, HMAC account login throttling, bounded cleanup command, SQLite concurrency test, PostgreSQL 16 multi-process CI, and contention benchmark. | Latest-head CI is being rerun; do not treat the earlier 47-test result as verification of this batch. | Verification pending |
 
 ## 9. Current implementation details and residual review
 
 ### Implemented in the working branch
 
 - Added `RateLimitBucket` model and Alembic revision `0003_rate_limit_buckets`.
-- Added `app/rate_limit.py` with atomic SQLite/PostgreSQL upsert counters, HMAC-SHA256 bucket-key pseudonyms (keyed by `RATE_LIMIT_HASH_SECRET`), fixed windows, 429 responses with `Retry-After`, fail-closed 503 behavior when the limiter store is unavailable, and an explicit expired-bucket cleanup function.
-- Added environment-configurable policies (defaults): registration 5/hour/IP; login 10/15 minutes/IP; member creation 10/hour/user+tenant; payment creation 20/minute/user+tenant; refunds 5/minute/user+tenant; reads 120/minute/user+tenant.
+- Added `app/rate_limit.py` with monotonic atomic SQLite/PostgreSQL upsert counters, startup-validated policies, HMAC-SHA256 bucket pseudonyms, 429/Retry-After responses, fail-closed 503 behavior, and bounded expired-bucket cleanup.
+- Added `app/proxy.py` and an explicit `TRUSTED_PROXY_IPS` allowlist; forwarded headers are ignored unless the immediate peer is trusted.
+- Added a privacy-preserving per-account login budget in addition to a higher IP budget to constrain distributed password spraying and reduce NAT collateral.
+- Added `app/maintenance.py` for scheduled bounded cleanup and `scripts/benchmark_rate_limit.py` for target-database throughput/p95 measurements.
+- Added environment-configurable policies (defaults): registration 5/hour/IP; login IP 60/15 minutes and account 10/15 minutes (HMAC); member creation 10/hour/user+tenant; payment creation 20/minute/user+tenant; refunds 5/minute/user+tenant; reads 120/minute/user+tenant.
 - Applied limits to registration, login, member creation, profile, dashboard, payment list/detail/create, and refund routes. Health and readiness probes remain exempt.
 - Frontend displays retry guidance for 429. Payment idempotency key remains in session storage after a rejected request.
-- Added tests for fixed-window enforcement/reset, HMAC bucket pseudonyms, cleanup, login/IP throttling (including failed attempts and forwarded-header spoof resistance), registration, payment/refund/member-create limits, per-user isolation, read limits, fail-closed storage errors, environment policy configuration, production secret enforcement, and frontend retry guidance.
+- Added tests for fixed-window enforcement/reset and boundary bursts, monotonic stale-window behavior, HMAC account pseudonyms, bounded cleanup, trusted proxy chain resolution, missing peer handling, login IP/account throttling, registration/payment/refund/member-create/read limits, fail-closed storage errors, invalid environment policy rejection, SQLite concurrent increments, and PostgreSQL multi-process concurrency.
 
 ### Residual risks / items not yet proven
 
