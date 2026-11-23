@@ -7,6 +7,7 @@ operations documentation before using this limiter for public production traffic
 from __future__ import annotations
 
 import hmac
+import ipaddress
 from hashlib import sha256
 from math import ceil
 import os
@@ -47,6 +48,7 @@ POLICIES: dict[str, tuple[int, int]] = {
     "register": _policy("register", 5, 3600),
     "login": _policy("login", 60, 900),
     "login_account": _policy("login_account", 10, 900),
+    "login_network": _policy("login_network", 100, 900),
     "member_create": _policy("member_create", 10, 3600),
     "payment_create": _policy("payment_create", 20, 60),
     "refund": _policy("refund", 5, 60),
@@ -131,6 +133,17 @@ def _enforce(db: Session, action: str, identity: str) -> None:
 def enforce_rate_limit(db: Session, action: str, identity: str) -> None:
     """Enforce an additional server-derived identity bucket inside a route."""
     _enforce(db, action, identity)
+
+
+def login_network_identity(peer_host: str) -> str:
+    """Group login traffic by IPv4 /24 or IPv6 /64 to slow subnet-rotating sprays."""
+    try:
+        address = ipaddress.ip_address(peer_host)
+    except ValueError:
+        return f"peer:{peer_host}"
+    prefix = 24 if address.version == 4 else 64
+    network = ipaddress.ip_network((address, prefix), strict=False)
+    return f"network:{network}"
 
 
 def rate_limit_ip(action: str):
