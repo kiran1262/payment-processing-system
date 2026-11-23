@@ -31,7 +31,11 @@ async function request(url, options = {}) {
   const data = await response.json().catch(()=>({detail:"Unexpected server response"}));
   if(!response.ok){
     const detail=data.detail;
-    const message=Array.isArray(detail)?detail.map(item=>item.msg||"Invalid value").join("; "):(detail||`Request failed (${response.status})`);
+    let message=Array.isArray(detail)?detail.map(item=>item.msg||"Invalid value").join("; "):(detail||`Request failed (${response.status})`);
+    if(response.status===429){
+      const retryAfter=response.headers.get("Retry-After");
+      if(retryAfter) message += ` Please retry in ${retryAfter} seconds.`;
+    }
     if(response.status===401 && url!=="/api/auth/login" && url!=="/api/auth/register") clearAuthentication("Your session expired. Please sign in again.");
     throw new Error(message);
   }
