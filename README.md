@@ -6,7 +6,7 @@ A full-stack educational payment-processing demo with a neon analytics dashboard
 
 This project is a **simulation**. It does not connect to a bank, card network, UPI provider, or Stripe and it never moves real money. Do not enter real card numbers, CVVs, UPI PINs, or banking credentials. A successful demo response is not a real payment authorization.
 
-The application is intended for local learning. It is **not production-ready**: it currently has no user authentication/authorization, API rate limiting, tenant isolation, audit trail, production-grade ledger/reconciliation, signed provider webhooks, or secrets-management integration. Do not expose it to the public internet or use it to process real payments. A browser-delivered API key is not a safe substitute for server-side user authentication.
+The application is intended for local learning. It now includes basic application-level authentication, owner/member authorization, and tenant-scoped demo data, but it is **not production-ready**. It still lacks rate limiting, durable audit trails, a production identity/session architecture, a ledger/reconciliation system, signed provider webhooks, and secrets-management integration. Browser bearer tokens are held in session storage for this demo and remain exposed to browser-side compromise such as XSS. Do not expose it to the public internet or use it to process real payments.
 
 ## Features
 
@@ -14,7 +14,10 @@ The application is intended for local learning. It is **not production-ready**: 
 - Create simulated payments using Card, UPI, Wallet, or Net Banking labels
 - Transaction history and SQL-aggregated dashboard metrics
 - Payment detail endpoint and simulated refunds
-- Idempotency-Key support with request-payload conflict detection
+- Registration, login, logout, expiring bearer sessions, and PBKDF2 password hashing
+- Owner/member roles with owner-only refunds and tenant membership management
+- Tenant-isolated payment lists, details, refunds, dashboards, and idempotency keys
+- Idempotency-Key support with request-payload conflict detection and safe browser retries
 - Exact decimal-to-paise conversion and email validation
 - Bounded payment listing and database-safe refund state transition
 - Explicit Alembic database migrations; application startup does not create or alter tables
@@ -60,7 +63,7 @@ Open http://127.0.0.1:8000 for the dashboard and http://127.0.0.1:8000/docs for 
 Alembic is the only schema-management path used by the application. Starting FastAPI no longer runs Base.metadata.create_all() or silently changes a database schema.
 
 - **New/empty database:** run alembic upgrade head before starting the application.
-- **Existing database created by the previous demo:** stop the application and make a verified backup first. Confirm that its payments table matches the initial migration (columns, types, nullability, primary/unique constraints, and indexes). Then run alembic stamp 0001_initial_schema to record the baseline without executing table-creation SQL, followed by alembic upgrade head. The stamp command does not inspect or repair the schema; do not run it against a database whose schema has not been verified.
+- **Existing database created by the previous demo:** stop the application and make a verified backup first. Confirm that its payments table matches the initial migration (columns, types, nullability, primary/unique constraints, and indexes). Then run alembic stamp 0001_initial_schema to record the baseline without executing table-creation SQL, followed by alembic upgrade head. Migration `0002_tenants_auth` creates the legacy demo tenant and assigns every existing payment to it while replacing global idempotency uniqueness with tenant-scoped uniqueness. The stamp command does not inspect or repair the schema; do not run it against a database whose schema has not been verified.
 - **Deployment database:** set DATABASE_URL to the SQLAlchemy URL for the target database and run alembic upgrade head as an explicit deployment/release step before deploying application code. Keep the URL and credentials in the deployment secret manager; never commit credentials.
 - **Rollback:** inspect the target revision and backup before using alembic downgrade. A downgrade can remove schema objects and data. The initial migration downgrade drops the payments table and is destructive.
 
