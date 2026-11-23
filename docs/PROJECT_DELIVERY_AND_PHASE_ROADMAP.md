@@ -149,8 +149,30 @@ The seven QA findings have now been addressed in application code on the PR #4 b
 ### Verification record
 
 - The first CI run exposed three failures: two migration metadata drift findings and a changed health response contract. The underlying causes were corrected without weakening tests.
-- The latest full GitHub Actions push run passed on commit edf1ad478d9ed38f0f60876a4f0041342ac88113. The frontend JavaScript syntax check also passed on commit 6036c87589f05c6fe1e059c56f397eb3b7a9f676.
-- Result: **30 passed, 1 warning**. The run includes authentication, expired/revoked sessions, owner/member authorization, cross-tenant access, tenant-scoped idempotency, migration preservation/schema drift, readiness success/failure, frontend retry-key persistence, UI-copy assertions, and the existing payment/refund suite.
+- The initial Phase 1 implementation run passed on commit edf1ad478d9ed38f0f60876a4f0041342ac88113 with 30 tests. The subsequent final-review fix run is recorded below and supersedes that earlier count.
+- Frontend JavaScript syntax was separately checked on commit 6036c87589f05c6fe1e059c56f397eb3b7a9f676; a full browser end-to-end test has not yet been run.
 - Frontend coverage is source-level regression checking; a real browser end-to-end test has not yet been run.
 - PR #4 remains a draft. The implementation is ready for review, not merged. Keep it unmerged until you have reviewed the API/security behavior and decide to merge.
 
+
+
+---
+
+## 11. Final-review fixes — 23 November 2026
+
+The second full-project review identified four residual application issues after the original seven QA findings had been implemented. The following fixes are now present on the PR #4 branch:
+
+| Finding | Change | Regression coverage |
+|---|---|---|
+| Legacy demo workspace had no owner | Added `app.bootstrap_legacy_owner`, a one-time local administrative command using environment variables. It is not an HTTP route and refuses to run if the legacy workspace is missing or already has a user. | Tests verify owner creation, password hashing, and refusal of a second bootstrap. |
+| SQLite did not enforce declared foreign keys | Added a SQLAlchemy SQLite connect listener that executes `PRAGMA foreign_keys=ON` for each connection. The test fixture uses the same configuration. | Test verifies that inserting a user referencing a nonexistent tenant raises `IntegrityError`. |
+| Members saw refund controls | Frontend refund buttons now render only when the authenticated profile role is `owner`; backend owner checks remain authoritative. | Source regression test verifies the role condition; existing API test verifies members receive 403. |
+| Sidebar identity was hard-coded | Authenticated profile responses now include workspace name; sidebar, topbar avatar, user name, and role are populated from that profile. | Source regression test verifies dynamic profile bindings and absence of the old hard-coded account name. |
+
+### Updated verification
+
+- GitHub Actions push run for commit `a0cb1b00c2e9df342b95d150fe489a83a5375344`: **success**.
+- Pytest result: **33 passed, 1 warning**.
+- The warning is a Starlette deprecation warning about using `httpx` with `starlette.testclient`; it does not fail the suite.
+- Browser-level end-to-end testing remains outstanding. CI currently runs pytest only.
+- PR #4 remains a draft and has not been merged. This implementation is still an educational payment simulation, not a production payment gateway.
