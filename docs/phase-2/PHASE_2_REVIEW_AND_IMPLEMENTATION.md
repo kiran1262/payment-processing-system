@@ -4,7 +4,7 @@
 > Project: `kiran1262/payment-processing-system`  
 > Base: `main` (PR #4 merged)  
 > Working branch: `feat/phase-2-rate-limiting-abuse-controls`  
- > Status: **Hardening verified on code commit d1eba7c9e804d2ef1bb1a9d954189427478e926b: 61 tests passed; PostgreSQL concurrency and CI contention smoke benchmark passed. Documentation/deployment templates are included; deployment-specific proxy/scheduler activation remains operator-owned.**  
+> Status: **Hardening verified on code commit d1eba7c9e804d2ef1bb1a9d954189427478e926b: 61 tests passed; PostgreSQL concurrency and CI contention smoke benchmark passed. Documentation/deployment templates are included; deployment-specific proxy/scheduler activation remains operator-owned.**  
 > Scope: API rate limiting and abuse controls. This document is updated as findings are verified and fixes land. The independent QA findings for the current implementation are recorded in [`PHASE_2_QA_REVIEW.md`](./PHASE_2_QA_REVIEW.md).
 
 ---
