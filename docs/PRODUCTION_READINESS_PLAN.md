@@ -97,16 +97,16 @@ Complete the phases in order. Each phase should be its own focused change with t
 - Prefer an existing gateway/reverse-proxy capability when deployment provides one. Add a library only if the deployment cannot provide the required limits.
 
 **Tasks**
-- Define separate limits for authentication attempts, payment creation, refunds, reads, and webhook ingress.
+- Define separate limits for authentication attempts, member creation, payment creation, refunds, and authenticated reads. Document webhook ingress limits for Phase 5 after a provider is selected.
 - Use shared storage for limits across application workers; an in-process counter is not sufficient in a multi-worker deployment.
 - Return 429 with a useful `Retry-After` value.
-- Decide how trusted provider callbacks and internal health checks are treated.
+- Keep liveness/readiness probes exempt from application user limits; document trusted provider callback handling as a Phase 5 requirement.
 - Test burst behavior, reset windows, and multi-worker consistency.
 
 **Done when**
 - Limits are enforced consistently across all workers and instances.
 - Expensive or sensitive endpoints have explicit policies.
-- Legitimate provider retries are not accidentally blocked.
+- Legitimate application requests are throttled predictably; provider retry handling is designed separately in Phase 5.
 
 ### 3. Audit logging
 
