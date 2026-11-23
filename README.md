@@ -180,7 +180,6 @@ Before any real payment integration or public deployment:
 - Verify signed provider webhooks and make webhook processing idempotent.
 - Add PostgreSQL concurrency and failure-injection tests.
 - Add monitoring/alerting, backups and restore drills, TLS, secrets management, deployment/rollback controls, and independent security review.
-- Add secrets management, TLS, secure deployment configuration, and security review.
 - Never store raw card data or CVV; follow the provider's current compliance requirements.
 
 Do not make the demo publicly accessible until the above controls are implemented and reviewed.
