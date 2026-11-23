@@ -117,3 +117,39 @@ The endpoint returns a healthy response without checking database connectivity. 
 - [ ] Full CI passes and a final route/service query review finds no missing tenant filters.
 
 **Closure rule:** mark a QA item fixed only after the relevant code change is present, a regression test covers it, and the required checks pass. A review comment, documentation update, or green CI run for the documentation-only baseline is not evidence that the underlying defect has been fixed.
+
+---
+
+## 10. Phase 1 implementation record — 23 November 2026
+
+The seven QA findings have now been addressed in application code on the PR #4 branch. This is an implementation record; the completion gate remains tied to the latest CI result and final review.
+
+| QA | Implementation added | Regression evidence |
+|---|---|---|
+| QA-01 Authentication | Public tenant-owner registration and login; PBKDF2-HMAC-SHA256 password hashes; random opaque bearer tokens stored only as SHA-256 digests; 12-hour expiry; logout revocation; authentication dependency on payment routes | Missing-auth, login failure/success, logout revocation, and owner/member route tests |
+| QA-02 Tenant isolation | Tenant/user/session models; payment tenant foreign key; tenant identity derived from authenticated user; tenant filters on list/detail/refund/dashboard; cross-tenant detail/refund return 404 | Cross-tenant list/detail/refund/dashboard tests; client tenant ID is ignored |
+| QA-03 Tenant-scoped idempotency | Composite unique constraint on (tenant_id, idempotency_key); both initial replay lookup and IntegrityError recovery lookup include tenant ID | Same key in two tenants creates independent payments; same-tenant replay remains idempotent |
+| QA-04 Retry safety | Browser retains the pending idempotency key in session storage and binds it to a SHA-256 fingerprint of the submitted payload; same-payload retry reuses the key | Frontend regression assertion checks persisted key/fingerprint behavior; backend replay tests remain in place |
+| QA-05 Chart accuracy | Hard-coded chart remains decorative but is now labelled “Illustrative activity”; supporting copy and accessible SVG label explicitly say it is not live transaction data | Frontend copy/label inspected in the PR diff |
+| QA-06 Capability wording | Replaced claims of real money movement, secure payment, verification, protected environment, and all-systems-operational status with explicit demo/simulation wording | Frontend copy inspected in the PR diff |
+| QA-07 Readiness | /api/health remains a backwards-compatible liveness endpoint; /api/ready executes SELECT 1 and returns a generic 503 if the database is unavailable | Healthy and unavailable-database readiness tests; generic response assertion |
+
+### Phase 1 API and security notes
+
+- Public routes: registration, login, liveness, and readiness.
+- Protected routes: current-user profile, member management, dashboard, and all payment operations.
+- Roles: owner and member; only owners can create members or refund payments.
+- Sessions: 12-hour bearer sessions; logout revokes the presented session.
+- Password storage: salted PBKDF2-HMAC-SHA256 with 310,000 iterations; plaintext passwords are never stored.
+- Tenant ownership is server-derived from the authenticated user. No client-supplied tenant ID is used to scope payment access.
+- Existing payment rows are copied into the Legacy demo workspace by Alembic migration 0002_tenants_auth.
+- The migration removes global idempotency-key uniqueness and uses tenant-scoped uniqueness. Downgrade refuses to collapse tenant boundaries if different tenants have reused a key.
+- Frontend bearer tokens are stored in sessionStorage for this educational demo. This is not a production session architecture and remains exposed to XSS/browser compromise.
+
+### Verification record
+
+- Initial CI exposed three failures: two migration metadata drift findings and a changed health response contract. Both root causes were corrected; tests were not weakened.
+- The follow-up workflow passed on the code/migration correction commit.
+- Additional regression tests were then added for unavailable-database readiness and frontend retry-key persistence. The latest workflow for those tests must pass before this phase is marked complete.
+- PR #4 remains a draft and must not be merged until the latest workflow and final review pass.
+
