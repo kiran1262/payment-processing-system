@@ -1,7 +1,8 @@
 """Shared, database-backed API rate limiting.
 
-Identity values are hashed before persistence. Forwarded IP headers are deliberately
-ignored; configure trusted proxy handling at the deployment edge if required.
+Bucket identities are HMAC-pseudonymized before persistence. Fixed windows are
+intentionally simple and can permit a two-window boundary burst; see the Phase 2
+operations documentation before using this limiter for public production traffic.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import os
 from time import time
 
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy import case, delete
+from sqlalchemy import case, delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,17 +26,27 @@ from .models import RateLimitBucket, User
 
 
 def _policy(name: str, default_limit: int, default_window: int) -> tuple[int, int]:
-    """Read action policy from environment while retaining safe local defaults."""
-    return (
-        int(os.environ.get(f"RATE_LIMIT_{name.upper()}_LIMIT", default_limit)),
-        int(os.environ.get(f"RATE_LIMIT_{name.upper()}_WINDOW_SECONDS", default_window)),
-    )
+    """Load and validate an action policy before the application serves requests."""
+    limit_name = f"RATE_LIMIT_{name.upper()}_LIMIT"
+    window_name = f"RATE_LIMIT_{name.upper()}_WINDOW_SECONDS"
+    try:
+        limit = int(os.environ.get(limit_name, default_limit))
+        window = int(os.environ.get(window_name, default_window))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"{limit_name} and {window_name} must be integers") from exc
+    if not 1 <= limit <= 1_000_000:
+        raise RuntimeError(f"{limit_name} must be between 1 and 1000000")
+    if not 1 <= window <= 31_536_000:
+        raise RuntimeError(f"{window_name} must be between 1 and 31536000")
+    return limit, window
 
 
-# Policies are action-specific and can be tuned per deployment.
+# Login has a generous shared-IP budget for NAT fairness and a stricter
+# per-account budget to constrain distributed password spraying.
 POLICIES: dict[str, tuple[int, int]] = {
     "register": _policy("register", 5, 3600),
-    "login": _policy("login", 10, 900),
+    "login": _policy("login", 60, 900),
+    "login_account": _policy("login_account", 10, 900),
     "member_create": _policy("member_create", 10, 3600),
     "payment_create": _policy("payment_create", 20, 60),
     "refund": _policy("refund", 5, 60),
@@ -55,11 +66,8 @@ def consume_rate_limit(
     if action not in POLICIES:
         raise ValueError(f"Unknown rate-limit action: {action}")
     limit, window_seconds = POLICIES[action]
-    if limit < 1 or window_seconds < 1:
-        raise ValueError("Rate-limit policy values must be positive")
-
     current = int(time()) if now is None else int(now)
-    window_start = (current // window_seconds) * window_seconds
+    incoming_window = (current // window_seconds) * window_seconds
     bucket_key = _bucket_digest(action, identity)
     dialect = db.get_bind().dialect.name
     if dialect == "sqlite":
@@ -69,35 +77,41 @@ def consume_rate_limit(
     else:
         raise RuntimeError("Rate limiting requires SQLite or PostgreSQL atomic upsert support")
 
+    # A delayed request must never move the persisted window backwards. If its
+    # sampled window is stale, count it conservatively against the newest window.
+    incoming_is_newer = RateLimitBucket.window_start < incoming_window
     statement = insert_statement.values(
         bucket_key=bucket_key,
-        window_start=window_start,
+        window_start=incoming_window,
         request_count=1,
-        expires_at=window_start + (window_seconds * 2),
+        expires_at=incoming_window + (window_seconds * 2),
     ).on_conflict_do_update(
         index_elements=[RateLimitBucket.bucket_key],
         set_={
             "window_start": case(
-                (RateLimitBucket.window_start == window_start, RateLimitBucket.window_start),
-                else_=window_start,
+                (incoming_is_newer, incoming_window),
+                else_=RateLimitBucket.window_start,
             ),
-            "request_count": case(
-                (RateLimitBucket.window_start == window_start, RateLimitBucket.request_count + 1),
-                else_=1,
+            "request_count": __import__("sqlalchemy").case(
+                (incoming_is_newer, 1),
+                else_=RateLimitBucket.request_count + 1,
             ),
-            "expires_at": window_start + (window_seconds * 2),
+            "expires_at": __import__("sqlalchemy").case(
+                (incoming_is_newer, incoming_window + (window_seconds * 2)),
+                else_=RateLimitBucket.expires_at,
+            ),
         },
-    ).returning(RateLimitBucket.request_count)
+    ).returning(RateLimitBucket.request_count, RateLimitBucket.window_start)
 
     try:
-        request_count = db.execute(statement).scalar_one()
-        # Commit the counter independently before the business handler runs.
+        request_count, effective_window = db.execute(statement).one()
+        # Commit independently before the business handler executes.
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         raise
 
-    retry_after = max(1, ceil(window_start + window_seconds - current))
+    retry_after = max(1, ceil(effective_window + window_seconds - current))
     return request_count <= limit, retry_after
 
 
@@ -105,7 +119,6 @@ def _enforce(db: Session, action: str, identity: str) -> None:
     try:
         allowed, retry_after = consume_rate_limit(db, action, identity)
     except (SQLAlchemyError, RuntimeError):
-        # Fail closed: an unavailable limiter must not silently disable protection.
         raise HTTPException(503, "Rate limiting service unavailable", headers={"Retry-After": "5"})
     if not allowed:
         raise HTTPException(
@@ -115,11 +128,18 @@ def _enforce(db: Session, action: str, identity: str) -> None:
         )
 
 
+def enforce_rate_limit(db: Session, action: str, identity: str) -> None:
+    """Enforce an additional server-derived identity bucket inside a route."""
+    _enforce(db, action, identity)
+
+
 def rate_limit_ip(action: str):
-    """Rate-limit public endpoints by the socket peer address."""
+    """Rate-limit public endpoints by the resolved socket peer address."""
     def dependency(request: Request, db: Session = Depends(get_db)) -> None:
-        peer_ip = request.client.host if request.client is not None else "unknown"
-        _enforce(db, action, f"ip:{peer_ip}")
+        peer = request.client
+        if peer is None or not peer.host:
+            raise HTTPException(503, "Client network identity unavailable", headers={"Retry-After": "5"})
+        _enforce(db, action, f"ip:{peer.host}")
     return dependency
 
 
@@ -133,9 +153,30 @@ def rate_limit_user(action: str):
     return dependency
 
 
-def purge_expired_rate_limit_buckets(db: Session, *, now: int | None = None) -> int:
-    """Delete expired buckets; call from a scheduled maintenance task."""
+def purge_expired_rate_limit_buckets(
+    db: Session, *, now: int | None = None, batch_size: int = 1000
+) -> int:
+    """Delete expired buckets in bounded, independently committed batches."""
+    if not 1 <= batch_size <= 10_000:
+        raise ValueError("batch_size must be between 1 and 10000")
     current = int(time()) if now is None else int(now)
-    result = db.execute(delete(RateLimitBucket).where(RateLimitBucket.expires_at <= current))
-    db.commit()
-    return result.rowcount or 0
+    total_deleted = 0
+    try:
+        while True:
+            expired_keys = (
+                select(RateLimitBucket.bucket_key)
+                .where(RateLimitBucket.expires_at <= current)
+                .order_by(RateLimitBucket.expires_at)
+                .limit(batch_size)
+            )
+            result = db.execute(
+                delete(RateLimitBucket).where(RateLimitBucket.bucket_key.in_(expired_keys))
+            )
+            deleted = result.rowcount or 0
+            db.commit()
+            total_deleted += deleted
+            if deleted < batch_size:
+                return total_deleted
+    except SQLAlchemyError:
+        db.rollback()
+        raise
