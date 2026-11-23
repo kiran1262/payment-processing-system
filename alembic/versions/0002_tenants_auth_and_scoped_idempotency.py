@@ -33,7 +33,6 @@ def upgrade() -> None:
         sa.Column("role", sa.String(20), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("email", name="uq_users_email"),
     )
     op.create_index("ix_users_tenant_id", "users", ["tenant_id"])
     op.create_index("ix_users_email", "users", ["email"], unique=True)
@@ -45,7 +44,6 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("token_hash", name="uq_auth_sessions_token_hash"),
     )
     op.create_index("ix_auth_sessions_user_id", "auth_sessions", ["user_id"])
     op.create_index("ix_auth_sessions_token_hash", "auth_sessions", ["token_hash"], unique=True)
@@ -68,7 +66,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("refunded_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("payment_id", name="uq_payments_payment_id"),
         sa.UniqueConstraint("tenant_id", "idempotency_key", name="uq_payments_tenant_idempotency"),
     )
     op.execute(sa.text("""
