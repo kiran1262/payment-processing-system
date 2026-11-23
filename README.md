@@ -103,7 +103,7 @@ The application and Alembic both read DATABASE_URL. SQLite is the local default.
 
 ## Vercel + Supabase deployment
 
-This branch includes a Vercel FastAPI entrypoint, Supabase transaction-pooler connection handling, Vercel client-IP resolution for rate limiting, and a Supabase pg_cron cleanup script. Follow the [Vercel + Supabase deployment guide](docs/deployment/VERCEL_SUPABASE.md) for project setup, environment variables, Alembic migration steps, scheduled cleanup, and verification. Do not deploy publicly or use real payment credentials; this project remains an educational simulation.
+This branch includes a root-level Vercel FastAPI entrypoint, Supabase transaction-pooler connection handling, Vercel client-IP resolution for rate limiting, and a Supabase pg_cron cleanup script. Follow the [Vercel + Supabase deployment guide](docs/deployment/VERCEL_SUPABASE.md) for project setup, environment variables, Alembic migration steps, scheduled cleanup, and verification. Do not deploy publicly or use real payment credentials; this project remains an educational simulation.
 
 ## Run tests
 
