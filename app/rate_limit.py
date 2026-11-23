@@ -5,6 +5,7 @@ ignored; configure trusted proxy handling at the deployment edge if required.
 """
 from __future__ import annotations
 
+import hmac
 from hashlib import sha256
 from math import ceil
 from time import time
@@ -17,6 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .auth import get_current_user
+from .config import RATE_LIMIT_HASH_SECRET
 from .database import get_db
 from .models import RateLimitBucket, User
 
@@ -32,7 +34,8 @@ POLICIES: dict[str, tuple[int, int]] = {
 
 
 def _bucket_digest(action: str, identity: str) -> str:
-    return sha256(f"rate-limit:v1:{action}:{identity}".encode("utf-8")).hexdigest()
+    message = f"rate-limit:v1:{action}:{identity}".encode("utf-8")
+    return hmac.new(RATE_LIMIT_HASH_SECRET.encode("utf-8"), message, sha256).hexdigest()
 
 
 def consume_rate_limit(
