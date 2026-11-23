@@ -312,7 +312,7 @@ This review does not change application code. Findings are recorded for the next
 
 ### Operational completion notes
 
-- Cleanup: schedule the maintenance command every 5–15 minutes using the deployment scheduler.
+- Cleanup: systemd service/timer and Windows scheduled-task script are included; install/enable the matching template for the actual deployment host.
 - Trusted proxy: set TRUSTED_PROXY_IPS to exact proxy addresses/CIDRs, ensure the proxy sanitizes/appends X-Forwarded-For, and run Uvicorn with --no-proxy-headers. Never trust all addresses.
 - Database contention: run python -m scripts.benchmark_rate_limit --workers 20 --requests 500 against a staging database using the same DB engine and worker topology. Compare p50/p95 with the API latency budget; use a dedicated limiter if primary DB write contention is material.
 - Fixed-window boundary burst: a limit of N can allow up to roughly 2N in a short interval spanning a boundary. This is tested and documented; strict burst smoothing requires token bucket/sliding window at a trusted gateway or a dedicated limiter.
