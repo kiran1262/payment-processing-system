@@ -16,7 +16,7 @@ from .auth import (
     issue_session, require_owner, token_digest, verify_password,
 )
 from .database import get_db
-from .models import AuthSession, Payment, User
+from .models import AuthSession, Payment, Tenant, User
 from .schemas import LoginRequest, MemberCreate, PaymentCreate, RegisterRequest
 from .services import IdempotencyConflictError, create_payment, dashboard_stats, refund_payment
 
@@ -59,7 +59,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="An account with this email already exists") from exc
     return {
         "access_token": token, "token_type": "bearer", "expires_at": expires_at.isoformat(),
-        "tenant": {"id": tenant.id, "name": tenant.name}, "user": user_json(user),
+        "tenant": {"id": tenant.id, "name": tenant.name}, "user": user_json(user, db),
     }
 
 
@@ -71,13 +71,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     token, expires_at = issue_session(db, user)
     return {
         "access_token": token, "token_type": "bearer", "expires_at": expires_at.isoformat(),
-        "tenant": {"id": user.tenant_id}, "user": user_json(user),
+        "tenant": {"id": user.tenant_id}, "user": user_json(user, db),
     }
 
 
 @app.get("/api/auth/me")
-def me(user: User = Depends(get_current_user)):
-    return user_json(user)
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return user_json(user, db)
 
 
 @app.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -114,7 +114,7 @@ def create_member(
         db.rollback()
         raise HTTPException(409, "An account with this email already exists") from exc
     db.refresh(member)
-    return user_json(member)
+    return user_json(member, db)
 
 
 @app.get("/api/dashboard")
@@ -182,9 +182,16 @@ def refund(payment_id: str, owner: User = Depends(require_owner), db: Session = 
         raise HTTPException(500, detail="Refund could not be processed.") from exc
 
 
-def user_json(user: User):
-    return {"id": user.id, "tenant_id": user.tenant_id, "full_name": user.full_name,
-            "email": user.email, "role": user.role}
+def user_json(user: User, db: Session | None = None):
+    tenant = db.get(Tenant, user.tenant_id) if db is not None else None
+    return {
+        "id": user.id,
+        "tenant_id": user.tenant_id,
+        "tenant_name": tenant.name if tenant is not None else None,
+        "full_name": user.full_name,
+        "email": user.email,
+        "role": user.role,
+    }
 
 
 def payment_json(payment: Payment):
