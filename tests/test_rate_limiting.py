@@ -523,3 +523,18 @@ def test_supabase_transaction_pooler_uses_null_pool():
         assert isinstance(engine.pool, NullPool)
     finally:
         engine.dispose()
+
+
+def test_vercel_entrypoint_exports_the_existing_fastapi_app():
+    from fastapi import FastAPI
+    from api.index import app
+
+    assert isinstance(app, FastAPI)
+
+
+def test_vercel_config_includes_frontend_files_in_function_bundle():
+    import json
+    from pathlib import Path
+
+    config = json.loads((Path(__file__).resolve().parents[1] / "vercel.json").read_text())
+    assert config["functions"]["api/index.py"]["includeFiles"] == "frontend/**"
