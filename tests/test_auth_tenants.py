@@ -1,6 +1,7 @@
-from sqlalchemy import select
+from pathlib import Path
+from sqlalchemy.exc import SQLAlchemyError
 from app.database import get_db
-from app.models import AuthSession
+from app.main import app
 
 def register(client, tenant, name, email):
     response = client.post("/api/auth/register", json={
@@ -89,3 +90,35 @@ def test_registration_never_accepts_client_selected_tenant_id(client):
 
 def test_readiness_endpoint(client):
     assert client.get("/api/ready").json() == {"status": "ready", "database": "available"}
+
+def test_payment_detail_and_refund_also_require_authentication(client):
+    assert client.get("/api/payments/pay_unknown", headers={"Authorization": ""}).status_code == 401
+    assert client.post("/api/payments/pay_unknown/refund", headers={"Authorization": ""}).status_code == 401
+
+def test_readiness_returns_generic_503_when_database_is_unavailable(client):
+    previous_override = app.dependency_overrides[get_db]
+
+    class BrokenDatabase:
+        def execute(self, statement):
+            raise SQLAlchemyError("sensitive connection string must not be returned")
+        def close(self):
+            pass
+
+    def broken_db():
+        yield BrokenDatabase()
+
+    app.dependency_overrides[get_db] = broken_db
+    try:
+        response = client.get("/api/ready")
+        assert response.status_code == 503
+        assert response.json() == {"detail": "Database unavailable"}
+        assert "sensitive" not in response.text
+    finally:
+        app.dependency_overrides[get_db] = previous_override
+
+def test_frontend_reuses_idempotency_key_for_same_retry_payload():
+    source = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text()
+    assert 'sessionStorage.getItem("pending_payment_key")' in source
+    assert 'sessionStorage.setItem("pending_payment_key",key)' in source
+    assert "previousFingerprint!==requestFingerprint" in source
+    assert 'sessionStorage.removeItem("pending_payment_key")' in source
