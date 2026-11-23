@@ -41,3 +41,18 @@ def resolve_forwarded_client_ip(
             return str(address)
     # If every hop is trusted, don't promote an unverified leftmost value.
     return peer_host
+
+
+def resolve_vercel_client_ip(forwarded_for: str | None) -> str | None:
+    """Read Vercel's platform-overwritten client IP header.
+
+    Vercel documents that it overwrites X-Forwarded-For to prevent IP spoofing.
+    Treat the header as a single IP and fail closed when it is absent or malformed.
+    Do not use this helper for arbitrary, self-hosted reverse proxies.
+    """
+    if not forwarded_for:
+        return None
+    try:
+        return str(ipaddress.ip_address(forwarded_for.strip()))
+    except ValueError:
+        return None
