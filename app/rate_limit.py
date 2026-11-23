@@ -183,7 +183,10 @@ def purge_expired_rate_limit_buckets(
                 .limit(batch_size)
             )
             result = db.execute(
-                delete(RateLimitBucket).where(\n                    RateLimitBucket.expires_at <= current,\n                    RateLimitBucket.bucket_key.in_(expired_keys),\n                )
+                delete(RateLimitBucket).where(
+                    RateLimitBucket.expires_at <= current,
+                    RateLimitBucket.bucket_key.in_(expired_keys),
+                )
             )
             deleted = result.rowcount or 0
             db.commit()
