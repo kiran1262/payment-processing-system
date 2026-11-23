@@ -2,7 +2,7 @@
 
 **Project:** Payment Processing System  
 **Tracking PR:** [#2 — production-readiness roadmap](https://github.com/kiran1262/payment-processing-system/pull/2)  
-**Status:** Phases 0 and 1 are implemented and merged in PRs #3 and #4. Phase 2 is in progress in PR #5; phases 3–6 remain planned. The Phase 2 master review and implementation record is `docs/phase-2/PHASE_2_REVIEW_AND_IMPLEMENTATION.md`. This plan tracks production-readiness work, not a claim that the demo is production-ready.  
+**Status:** Phases 0 and 1 are implemented and merged in PRs #3 and #4. Phase 2 application implementation and automated CI verification are complete in draft PR #5; deployment-specific proxy/scheduler activation and target-environment benchmarking remain. Phases 3–6 remain planned. The Phase 2 master review and implementation record is `docs/phase-2/PHASE_2_REVIEW_AND_IMPLEMENTATION.md`. This plan tracks production-readiness work, not a claim that the demo is production-ready.  
 **Rule:** Work on one item at a time. Do not combine unrelated security, schema, and payment-accounting changes into one large patch.
 
 This application is currently an educational payment simulation. Do not expose it publicly or use it to process real money until the required controls have been implemented, tested, and independently reviewed.
@@ -13,7 +13,7 @@ This application is currently an educational payment simulation. Do not expose i
 |---|---|---|
 | 0. Alembic migration foundation | **Implemented** | PR #3 is merged. Alembic owns schema changes; startup does not call `create_all`. Migration tests cover fresh upgrade, existing-row preservation, and metadata drift. |
 | 1. Authentication, authorization, tenant isolation | **Complete — PR #4 merged** | Registration/login/logout, 12-hour revocable bearer sessions, owner/member roles, tenant-scoped payment operations and idempotency, migration 0002, SQLite FK enforcement, local legacy-owner bootstrap, owner-aware refund controls, dynamic profile identity, and regression tests are implemented. Browser E2E coverage remains outstanding. |
-| 2. Rate limiting and abuse controls | **In progress — PR #5 draft** | Shared database-backed atomic fixed-window limits for registration, login, member creation, payment creation, refunds, and authenticated reads; 429/Retry-After handling, fail-closed storage behavior, and regression tests. Production cleanup scheduling, trusted-proxy setup, and PostgreSQL concurrency validation remain gates. See the Phase 2 master record. |
+| 2. Rate limiting and abuse controls | **Implementation + CI verified — PR #5 draft** | Shared atomic SQLite/PostgreSQL fixed-window limits, IP/network/account login controls, bounded cleanup command and scheduler templates, trusted-proxy allowlist support, and regression tests. PostgreSQL 16 multi-process CI passed. Deployment-specific proxy/scheduler activation, target-database benchmark, policy tuning, and monitoring remain operational gates. See the Phase 2 master record. |
 | 3. Audit logging | **Not started** | Append-only, transactionally consistent business audit events. |
 | 4. Ledger and reconciliation | **Not started** | Immutable balanced double-entry postings and provider reconciliation. |
 | 5. Provider integration and webhook verification | **Not started** | Provider selection, signature/replay verification, durable event deduplication. |
@@ -103,10 +103,15 @@ Complete the phases in order. Each phase should be its own focused change with t
 - Keep liveness/readiness probes exempt from application user limits; document trusted provider callback handling as a Phase 5 requirement.
 - Test burst behavior, reset windows, and multi-worker consistency.
 
-**Done when**
-- Limits are enforced consistently across all workers and instances.
-- Expensive or sensitive endpoints have explicit policies.
-- Legitimate application requests are throttled predictably; provider retry handling is designed separately in Phase 5.
+**Implementation and CI acceptance — complete in PR #5**
+- Limits are enforced using shared atomic database counters; PostgreSQL 16 multi-process CI verifies concurrent behavior.
+- Registration, login (IP/network/account), member creation, payment creation, refunds, and authenticated reads have explicit policies.
+- 429/Retry-After and fail-closed storage behavior are tested.
+
+**Deployment acceptance — still required**
+- Enable cleanup scheduler and configure the actual trusted proxy allowlist.
+- Benchmark the target database/worker topology, tune policies, and add operational monitoring.
+- Provider retry handling remains a separate Phase 5 concern.
 
 ### 3. Audit logging
 
@@ -205,7 +210,7 @@ The current project remains a simulation until a real provider integration and i
 - [x] Existing payment demo bug-fix PR #1 merged; its pytest CI run passed.
 - [x] 0. Alembic migration foundation
 - [x] 1. Authentication, authorization, and tenant isolation
-- [ ] 2. API rate limiting (in progress — PR #5)
+- [x] 2. API rate limiting implementation and automated CI verification (PR #5 draft; deployment activation remains)
 - [ ] 3. Audit logging
 - [ ] 4. Ledger and reconciliation
 - [ ] 5. Provider integration and webhook verification
