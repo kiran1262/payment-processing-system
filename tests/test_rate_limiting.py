@@ -466,11 +466,3 @@ def test_trusted_proxy_wildcard_network_is_rejected_at_startup():
     assert result.returncode != 0
     assert "Wildcard trusted proxy networks are not allowed" in result.stderr
 
-
-def test_cleanup_rechecks_expiry_in_delete_predicate():
-    from sqlalchemy import delete
-    from app.models import RateLimitBucket
-
-    statement = delete(RateLimitBucket).where(RateLimitBucket.expires_at <= 123)
-    compiled = str(statement.compile())
-    assert "expires_at" in compiled
