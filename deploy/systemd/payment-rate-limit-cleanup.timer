@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Payment Processing System rate-limit cleanup every 10 minutes
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+AccuracySec=1min
+Unit=payment-rate-limit-cleanup.service
+
+[Install]
+WantedBy=timers.target
