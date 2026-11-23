@@ -1,241 +1,123 @@
 # Phase 2 — Independent QA Review
 
-> **Review type:** Static code review, acceptance-criteria audit, test-coverage review, and documentation consistency review.  
+> **Review type:** Static code review, acceptance-criteria audit, regression-test review, and documentation consistency review.  
 > **Repository:** `kiran1262/payment-processing-system`  
 > **PR:** [#5 — Phase 2: API rate limiting and abuse controls](https://github.com/kiran1262/payment-processing-system/pull/5)  
-> **Reviewed branch head:** `647c222980bcef8c1d899cacfc2ec8992e415880`  
-> **Review date:** 2026-11-23  
-> **Disposition:** Initial findings have been addressed in a follow-up implementation batch. See the remediation status table below; do not mark Phase 2 complete until the deployment owner installs the cleanup schedule and sets the actual trusted proxy allowlist.
+> **Original review snapshot:** `647c222980bcef8c1d899cacfc2ec8992e415880`  
+> **Follow-up implementation verification:** 61 pytest tests passed, 1 warning; PostgreSQL 16 multi-process test, PostgreSQL contention smoke benchmark, and frontend syntax check passed.  
+> **Current disposition:** All seven original QA findings have implementation or documentation remediation. Deployment-specific proxy/scheduler activation and target-environment benchmark remain operator-owned tasks. This is not production-readiness approval.
 
 ---
 
 ## 1. Executive summary
 
-The Phase 2 implementation has a sound starting structure: route-level FastAPI dependencies, a shared SQL database counter table, SQLite/PostgreSQL dialect upserts, HMAC-pseudonymized bucket keys, 429 responses, fail-closed storage errors, and environment-configurable policies.
-
-The original review snapshot was at commit `647c222980bcef8c1d899cacfc2ec8992e415880` with 47 tests. The follow-up implementation was verified on code commit `d1eba7c9e804d2ef1bb1a9d954189427478e926b`: **61 pytest tests passed, 1 warning**, PostgreSQL multi-process concurrency passed, a PostgreSQL contention smoke benchmark passed, and `node --check frontend/app.js` passed.
+The original review identified seven issues in the Phase 2 rate limiter. The follow-up implementation addressed the code defects, added SQLite and PostgreSQL concurrency coverage, and added bounded cleanup tooling and deployment templates.
 
 ### Findings at a glance
 
-| ID | Severity | Finding | Status |
+| ID | Severity | Finding | Current status |
 |---|---|---|---|
-| P2-QA-01 | High | A delayed request from an older window can move a bucket backwards and undermine the newer window's counter | Addressed; monotonic upsert + regression test |
-| P2-QA-02 | Medium | Zero/negative environment policy values cause an unhandled `ValueError` during requests | Addressed; startup validation + subprocess tests |
-| P2-QA-03 | Medium | Missing ASGI client address collapses all callers into one shared `unknown` IP bucket | Addressed; generic 503 + regression test |
-| P2-QA-04 | Medium | Login is only IP-throttled: NAT users can block each other, while distributed attempts can evade the limit | Addressed with IP, network-prefix, and account budgets; sophisticated botnets remain a risk |
-| P2-QA-05 | High | Concurrent upsert behavior and PostgreSQL behavior are not covered by automated tests | Addressed; SQLite threads + four PostgreSQL processes in CI |
-| P2-QA-06 | Medium | Cleanup is an unbounded delete on the primary database and has no operational scheduler/command | Addressed in code and deployment templates; host activation required |
-| P2-QA-07 | Low | Master document still contains stale/inconsistent proposal and verification wording | Addressed in master record, README, and roadmap |
+| P2-QA-01 | High | Older-window write could move a bucket backwards | Addressed; monotonic upsert and stale-window regression |
+| P2-QA-02 | Medium | Invalid policy values could fail on request instead of startup | Addressed; startup validation and subprocess tests |
+| P2-QA-03 | Medium | Missing peer address could collapse callers into one unknown bucket | Addressed; generic fail-closed 503 and regression |
+| P2-QA-04 | Medium | IP-only login throttling had NAT and distributed-spray weaknesses | Improved; IP, network-prefix, and account budgets; botnet risk remains |
+| P2-QA-05 | High | Atomicity and PostgreSQL multi-worker behavior were unverified | Addressed for Phase 2; SQLite threads and PostgreSQL 16 multi-process CI |
+| P2-QA-06 | Medium | Cleanup was unbounded and not operationally wired | Addressed in code/templates; scheduler activation remains an operator task |
+| P2-QA-07 | Low | Master documentation contained stale/inconsistent implementation status | Addressed; master record, QA report, README, and roadmap reconciled |
 
-Severity is about the risk to the current educational application, not a claim that the demo is production-ready.
+Severity describes risk to the educational application, not production certification.
 
----
-
-## 2. Detailed findings
+## 2. Original findings and remediation evidence
 
 ### P2-QA-01 — Older window writes can move a bucket backwards
 
 **Severity:** High  
-**File:** `app/rate_limit.py`  
-**Function:** `consume_rate_limit`
+**Original location:** `app/rate_limit.py`, `consume_rate_limit`
 
-**Evidence**
+The original upsert assumed requests reached the database in the same order in which their timestamps were sampled. A delayed request from window N could overwrite a bucket already advanced to N+1, then cause a later request to reset the counter.
 
-The upsert uses the incoming request's `window_start` whenever the stored bucket window differs:
+**Remediation:** The conflict update is monotonic. A stale arrival cannot replace a newer stored window; stale requests are accounted conservatively against the current stored window.
 
-- `window_start`: if stored window equals incoming window, retain it; otherwise replace it with the incoming value.
-- `request_count`: increment if equal; otherwise reset to 1.
-- `expires_at`: always replace with the incoming window's expiry.
+**Evidence:** Deterministic stale-window regression coverage is included in `tests/test_rate_limiting.py`.
 
-This assumes requests reach the database in the same order in which their timestamps were sampled.
-
-**Failure scenario**
-
-1. Worker A samples time in window N, then pauses before executing its upsert.
-2. The clock crosses into window N+1.
-3. Worker B writes window N+1 and starts its count.
-4. Worker A resumes and writes its older window N.
-5. A later request in N+1 sees a mismatch and resets the counter again.
-
-The bucket can therefore move backwards and then reset again. This is possible around window boundaries with scheduling delays or clock skew. The current documentation acknowledges clock skew, but the SQL update itself does not protect against an older window overwriting a newer one.
-
-**Required fix**
-
-Make the stored window monotonic. Use the dialect's excluded/incoming row value in the conflict update so that an older incoming window cannot replace a newer stored window. Define how a stale request is counted (prefer conservative accounting against the current stored window rather than resetting it backwards). Keep the count, window, and expiry expressions consistent.
-
-**Required regression tests**
-
-- Deterministically simulate an old-window upsert after a new-window upsert.
-- Assert the stored `window_start` never decreases.
-- Assert a stale request cannot reset or increase the allowance available in the newer window.
-- Run the same behavior against SQLite and PostgreSQL.
-
----
-
-### P2-QA-02 — Invalid positive-policy configuration becomes an unhandled request error
+### P2-QA-02 — Invalid policy configuration could fail at request time
 
 **Severity:** Medium  
-**File:** `app/rate_limit.py`  
-**Functions:** `_policy`, `consume_rate_limit`, `_enforce`
+**Original location:** `app/rate_limit.py`, policy loading/enforcement
 
-**Evidence**
+Zero or negative limits/windows could previously be parsed and only fail when a request used the policy.
 
-Environment values are parsed as integers in `_policy`. Positive-value validation happens later inside `consume_rate_limit`. A value such as `RATE_LIMIT_LOGIN_LIMIT=0` or a negative window parses successfully, then raises `ValueError` on every affected request. `_enforce` catches `SQLAlchemyError` and `RuntimeError`, but not this configuration error.
+**Remediation:** Policy configuration is validated during application startup/import. Invalid, zero, negative, and out-of-range values fail fast with an actionable configuration error.
 
-**Impact**
+**Evidence:** Subprocess tests cover invalid settings and valid overrides.
 
-A deployment typo can produce HTTP 500 responses on the affected route rather than a clear startup/configuration failure. The service may start successfully while the endpoint is unusable.
-
-**Required fix**
-
-Validate every policy at application configuration time: limit and window must be positive integers, with documented upper bounds if operationally required. Fail startup with an actionable message naming the invalid environment variable. Do not convert a policy configuration error into a generic rate-limit storage 503.
-
-**Required regression tests**
-
-- Zero limit rejected during configuration.
-- Negative limit rejected during configuration.
-- Zero/negative window rejected during configuration.
-- Valid override accepted.
-- Error identifies the invalid setting without printing secrets.
-
----
-
-### P2-QA-03 — Missing client address creates one global anonymous bucket
+### P2-QA-03 — Missing client address created a shared unknown bucket
 
 **Severity:** Medium  
-**File:** `app/rate_limit.py`  
-**Function:** `rate_limit_ip`
+**Original location:** `app/rate_limit.py`, IP identity dependency
 
-**Evidence**
+Using a literal `ip:unknown` bucket could make unrelated callers share one budget when the ASGI peer address was absent.
 
-When `request.client` is `None`, the code assigns the literal identity `ip:unknown`.
+**Remediation:** Missing required peer identity fails closed with a generic 503; it is not converted into a shared anonymous bucket.
 
-**Impact**
+**Evidence:** Missing-peer regression coverage is included in the rate-limit tests.
 
-All requests without a socket peer share the same bucket for that action. A proxy, ASGI transport, or deployment configuration that omits the peer can cause unrelated users to throttle one another. This is an availability failure and can make behavior depend on infrastructure configuration.
-
-**Required fix**
-
-Do not silently map missing identity to a shared global identity. Choose and document a safe behavior: preferably fail closed with a generic 503 when the client identity is required but unavailable, or use a separately configured trusted edge identity. Never use a constant global bucket as a substitute for client identity.
-
-**Required regression tests**
-
-- Request with no `request.client` does not use the `unknown` bucket.
-- Response follows the documented safe behavior.
-- Normal IPv4 and IPv6 socket peers remain distinct.
-
----
-
-### P2-QA-04 — Login IP-only throttling has both NAT and distributed-attack weaknesses
+### P2-QA-04 — Login throttling needed NAT fairness and distributed-spray controls
 
 **Severity:** Medium  
-**File:** `app/rate_limit.py`; `app/main.py` login dependency  
-**Status:** Known design limitation; requires an explicit decision.
+**Original location:** `app/rate_limit.py`, login dependencies
 
-**Evidence**
+IP-only throttling can penalize users sharing an office, campus, household, or carrier NAT, while an attacker can distribute attempts across many IPs.
 
-The login route uses only `rate_limit_ip("login")`. The master record already acknowledges that distributed password spraying across many IPs remains possible.
+**Remediation:** Login now uses three HMAC-keyed budgets:
+- IP: 60 attempts per 15 minutes.
+- Network prefix: 100 attempts per 15 minutes per IPv4 /24 or IPv6 /64.
+- Normalized account: 10 attempts per 15 minutes.
 
-**Additional impact**
+Generic throttling responses are used and raw email/IP identities are not persisted.
 
-- Users behind a shared office, campus, mobile-carrier, or household NAT share one IP budget and can block one another.
-- An attacker with many source IPs can distribute attempts and avoid the per-IP threshold.
+**Residual risk:** Account-level throttling can temporarily deny a legitimate user service. A large botnet spread across many networks can still evade the network budgets. MFA, breached-password checks, adaptive risk signals, bot controls, and monitoring remain necessary for a real service. This is not a permanent account-lockout mechanism.
 
-**Recommended design decision**
+**Evidence:** Tests cover IP/network/account buckets, HMAC pseudonyms, and generic behavior.
 
-Evaluate a second account-scoped bucket using a keyed HMAC of a normalized email address. Do not reveal whether an account exists through different response codes or messages. Avoid a simple permanent account lockout: that would let attackers deny service to a known user. Consider combining IP and account signals with progressive delay, alerting, or a carefully bounded account bucket.
-
-This is a policy/design finding, not a request to blindly add account lockout.
-
-**Required tests if implemented**
-
-- Same account from multiple IPs is detected by the account bucket.
-- Different accounts behind one IP still respect the IP budget.
-- Unknown and known accounts have indistinguishable externally observable throttling responses.
-- Attacker cannot permanently lock out an account with a small number of attempts.
-
----
-
-### P2-QA-05 — Atomicity and PostgreSQL behavior are not proven by the current test suite
+### P2-QA-05 — Atomicity and PostgreSQL multi-worker behavior were unverified
 
 **Severity:** High  
-**Files:** `tests/test_rate_limiting.py`, `.github/workflows/tests.yml`, `app/rate_limit.py`
+**Original locations:** `tests/test_rate_limiting.py`, `.github/workflows/tests.yml`, `app/rate_limit.py`
 
-**Evidence**
+SQLite in-memory tests alone could not prove multi-process behavior on PostgreSQL.
 
-- The master acceptance checklist leaves concurrent increments unchecked.
-- Current rate-limit tests use SQLite in-memory test fixtures.
-- The current CI job runs pytest and JavaScript syntax checking; it does not start PostgreSQL.
-- The implementation supports SQLite and PostgreSQL upserts, but no PostgreSQL-specific integration evidence is recorded.
+**Remediation:** Added file-backed SQLite concurrent-increment coverage and a PostgreSQL 16 CI service job that launches four independent Python processes against one shared bucket.
 
-**Impact**
+**Evidence:** 100 concurrent requests resulted in exactly 50 allowed requests at a configured limit of 50, while all 100 increments remained recorded. PostgreSQL integration passed in CI.
 
-The most important claim of a shared limiter—concurrent requests cannot exceed the configured allowance through lost updates—has not been demonstrated under real concurrent requests or the second supported database dialect.
-
-**Required verification**
-
-- Add a deterministic concurrent-increment test against a file-backed SQLite database.
-- Add a PostgreSQL service-backed integration job (or a separately tracked mandatory Phase 6 gate, with Phase 2 completion explicitly conditional on it).
-- Launch more simultaneous requests than the configured limit and assert exactly the allowed count succeeds.
-- Assert database bucket count and window state after the race.
-- Include a multi-process test before claiming cross-worker production behavior.
-
-The current SQL upsert is designed to be atomic, but design intent is not a substitute for a concurrency regression test.
-
----
-
-### P2-QA-06 — Expired-bucket cleanup is unbounded and not operationally wired
+### P2-QA-06 — Cleanup was unbounded and had no scheduler tooling
 
 **Severity:** Medium  
-**File:** `app/rate_limit.py`  
-**Function:** `purge_expired_rate_limit_buckets`
+**Original location:** `app/rate_limit.py`, expired-bucket cleanup
 
-**Evidence**
+A single unbounded delete could create database lock/WAL pressure; no command or scheduler template existed.
 
-The cleanup function issues one delete for every row whose `expires_at` is past and commits the entire operation. It is not exposed through a maintenance command or scheduled task.
+**Remediation:** Added bounded batch deletion with per-batch commits and an expiry recheck in the delete predicate. Added:
+- `python -m app.maintenance purge-rate-limits --batch-size 1000`
+- `deploy/systemd/payment-rate-limit-cleanup.service`
+- `deploy/systemd/payment-rate-limit-cleanup.timer`
+- `deploy/windows/cleanup-rate-limits.ps1`
 
-**Impact**
+**Evidence:** Cleanup tests cover batches and live buckets. Scheduler templates are in the branch.
 
-If cleanup is run after a long period or the table grows substantially, one large delete can create write locks, transaction-log/WAL pressure, and latency on the same database used for business operations. If it is never scheduled, stale rows accumulate indefinitely.
+**Operational residual:** The deployment owner must install/enable the scheduler on the actual host and provide the same database/secret environment as the application.
 
-**Required fix / operational decision**
-
-- Add a documented maintenance command or deployment scheduler.
-- Prefer bounded batches with a configurable batch size.
-- Ensure cleanup cannot delete an active window.
-- Record cleanup counts and failures without logging bucket identities.
-- Document expected frequency and operational ownership.
-
-**Required tests**
-
-- Batch deletes no more than the configured batch size.
-- Repeated runs eventually remove all expired rows.
-- Live buckets remain untouched.
-- Failure rolls back cleanly and can be retried.
-
----
-
-### P2-QA-07 — Master document has stale and inconsistent review status
+### P2-QA-07 — Master documentation was stale and inconsistent
 
 **Severity:** Low  
-**File:** `docs/phase-2/PHASE_2_REVIEW_AND_IMPLEMENTATION.md`
+**Original location:** `docs/phase-2/PHASE_2_REVIEW_AND_IMPLEMENTATION.md`
 
-**Evidence**
+The original record mixed proposed and implemented designs, old test counts, old login policies, and outdated operational tasks.
 
-- Section 6 still describes the implementation direction as “pending final code review” even though the implementation is present.
-- The proposal policy table omits the implemented member-creation limit.
-- The implementation log records an older code/test SHA rather than distinguishing the code/test commit from the current PR head.
-- The concurrency acceptance item is unchecked, but the top-level status does not call it out as a Phase 2 completion blocker strongly enough.
+**Remediation:** The master record now distinguishes implemented code, automated evidence, deployment actions, residual risks, and later project phases. README and production-readiness roadmap were reconciled.
 
-**Required fix**
-
-Keep the master record as the source of truth. Separate:
-1. Implemented and locally/CI verified.
-2. Implemented but not concurrency/DB-dialect verified.
-3. Operational deployment tasks.
-4. Deferred design risks.
-
-Do not mark Phase 2 complete while a required acceptance criterion remains unchecked.
+**Evidence:** Documentation cross-check on the Phase 2 branch.
 
 ---
 
@@ -244,73 +126,62 @@ Do not mark Phase 2 complete while a required acceptance criterion remains unche
 | Route | Current protection | QA result |
 |---|---|---|
 | `POST /api/auth/register` | IP bucket | Present |
-| `POST /api/auth/login` | IP bucket | Present; NAT/distributed limitations above |
+| `POST /api/auth/login` | IP + network-prefix + account buckets | Present |
 | `GET /api/auth/me` | Authenticated read bucket | Present |
-| `POST /api/auth/logout` | No explicit rate-limit bucket | Low-priority review; assess whether repeated revocation lookups need a limit |
+| `POST /api/auth/logout` | No separate rate-limit bucket | Low-priority follow-up; review if abuse telemetry justifies it |
 | `POST /api/tenant/members` | Owner check + user/tenant bucket | Present |
 | `GET /api/dashboard` | Authenticated read bucket | Present |
 | `GET /api/payments` | Authenticated read bucket | Present |
-| `POST /api/payments` | User/tenant create bucket | Present; idempotency remains separate |
 | `GET /api/payments/{payment_id}` | Authenticated read bucket | Present |
+| `POST /api/payments` | User/tenant create bucket | Present; idempotency remains separate |
 | `POST /api/payments/{payment_id}/refund` | Owner check + user/tenant refund bucket | Present |
 | `GET /api/health`, `GET /api/ready` | Exempt | Intentional |
 
-Route coverage is present for the primary Phase 2 scope. Logout throttling should be considered but is not currently a Phase 2 blocker unless abuse testing demonstrates a meaningful risk.
-
----
-
-## 4. Existing safeguards that should be preserved
+## 4. Safeguards to preserve
 
 - HMAC-SHA256 pseudonyms are stored instead of raw IP/user identities.
-- Production mode refuses to start without `RATE_LIMIT_HASH_SECRET`.
-- Arbitrary `X-Forwarded-For` is not directly read by the limiter.
-- Authenticated buckets derive from the verified user and tenant.
-- Registration/login have independent action buckets.
-- Rate-limit storage failure returns a generic 503 with `Retry-After`.
-- 429 responses include integer `Retry-After`.
-- Frontend shows retry guidance and the existing payment idempotency key remains a separate concern.
-- Rate-limit schema is introduced through Alembic revision `0003_rate_limit_buckets`.
-- Health and readiness endpoints are intentionally exempt.
+- Production startup requires `RATE_LIMIT_HASH_SECRET`.
+- Forwarded headers are ignored unless the immediate peer is explicitly trusted.
+- Authenticated buckets derive from verified user and tenant identity.
+- Registration/login action budgets remain independent.
+- Storage failure returns generic 503; 429 includes integer `Retry-After`.
+- Frontend retry guidance does not discard the payment idempotency key.
+- Rate-limit schema uses Alembic revision `0003_rate_limit_buckets`.
+- Health and readiness endpoints remain exempt.
 
-Do not weaken these behaviors while addressing the findings.
+## 5. Latest automated verification
 
----
+Latest verified implementation evidence recorded for PR head `0c3cda67e5bbb5a2fa2c09c8c629e8c840c0d6c0`:
 
-## 5. Initial remediation checklist (completed; evidence in section 7)
+- **61 pytest tests passed, 1 warning.**
+- PostgreSQL 16 multi-process test: four independent processes, 100 requests, exactly 50 allowed, all 100 increments retained.
+- PostgreSQL contention smoke benchmark: 100 requests, 8 workers; 573.0 requests/second, median 5.5 ms, p95 88.5 ms, max 105.3 ms on a GitHub-hosted runner.
+- `node --check frontend/app.js` passed.
+- Migration tests, including fresh upgrade and model drift checks, passed.
+- The warning is the existing Starlette/httpx TestClient deprecation warning.
 
-1. **Fix P2-QA-01** — monotonic window update and stale-window regression tests.
-2. **Fix P2-QA-02** — validate all environment policy values before serving requests.
-3. **Fix P2-QA-03** — define safe behavior for missing client address.
-4. **Decide P2-QA-04** — document the login abuse policy and implement only a safe account signal if justified.
-5. **Complete P2-QA-05** — concurrent tests and PostgreSQL verification, or explicitly retain it as a mandatory gate before Phase 2 completion.
-6. **Fix P2-QA-06** — bounded cleanup and operational command/schedule documentation.
-7. **Fix P2-QA-07** — reconcile the master document, README, and production roadmap.
-8. Run focused tests, full pytest, migration drift check, frontend syntax check, SQLite concurrency tests, and PostgreSQL integration tests.
-9. Review the final diff and update the PR description with actual latest-head CI evidence.
+The benchmark is a CI smoke measurement, not a production capacity claim. Benchmark the actual target database and worker topology before deployment.
 
----
+## 6. Remaining operational work
 
-## 6. Current QA decision
+These tasks are not missing application code, but they are required before deployment readiness:
 
-The follow-up hardening code passed 61 tests and the PostgreSQL multi-process concurrency and contention smoke steps on code commit `d1eba7c9e804d2ef1bb1a9d954189427478e926b`. PR #5 remains draft/open. Latest PR head `16ad729fdb225b7c693ee439ca4946dfa0aff667` passed 61 tests, PostgreSQL multi-process concurrency, the PostgreSQL contention smoke benchmark, and frontend syntax. Deployment-specific proxy/scheduler configuration remains with the operator. Do not describe the demo as production-ready: fixed-window boundary bursts, primary-database contention, account-throttle denial-of-service trade-offs, and large botnet risk remain documented limitations.
+- [ ] Configure `TRUSTED_PROXY_IPS` with exact deployment proxy IPs/CIDRs and verify the proxy sanitizes forwarded headers.
+- [ ] Install and enable the systemd timer or Windows scheduled task on the target host.
+- [ ] Run the benchmark against the actual staging database and worker topology; record p50/p95, lock waits, and resource usage.
+- [ ] Tune default policies for expected legitimate traffic.
+- [ ] Provision and document rotation of production `RATE_LIMIT_HASH_SECRET`.
+- [ ] Add operational alerting for 429 volume, limiter 503s, cleanup failures, and anomalous login attempts without logging raw identities.
+- [ ] Complete browser E2E checks for login, payment idempotency retry, 429 messaging, and owner-only actions.
 
-## 7. Follow-up remediation status
+## 7. Residual risks and decision
 
-| Finding | Remediation | Verification |
-|---|---|---|
-| P2-QA-01 stale-window race | Upsert keeps the stored window monotonic; stale requests are counted conservatively in the newest bucket. | Deterministic stale-window regression test. |
-| P2-QA-02 invalid policy config | Action limits/windows are validated during module startup, including positive bounds and parse errors. | Subprocess tests for zero, negative, and non-integer values. |
-| P2-QA-03 missing peer identity | Missing ASGI client identity returns generic 503 rather than a shared unknown bucket. | Dependency-level regression test. |
-| P2-QA-04 distributed password spraying | Login uses a 60/15m IP budget and 10/15m HMAC account bucket; generic responses and no raw email persistence. | Login IP/network/account-budget and HMAC-digest tests. |
-| P2-QA-05 concurrency/PostgreSQL | Added file-backed SQLite concurrent increment test and PostgreSQL 16 multi-process integration test in CI. | Passed: 4 independent processes, 100 requests, 50 allowed; full CI green. |
-| P2-QA-06 cleanup | Added bounded batch deletion and a maintenance command. | Batch cleanup regression; scheduler remains operator-configured. |
-| P2-QA-07 documentation | Master record and README updated with policies, proxy, cleanup, benchmark, and boundary semantics. | Documentation review. |
+- Fixed windows can allow approximately 2N requests across a short interval spanning adjacent windows. Strict burst smoothing needs token-bucket/sliding-window behavior at a trusted gateway or dedicated limiter.
+- The primary database is the limiter store; benchmark actual write contention and offload to Redis/gateway if required.
+- Application clock synchronization remains important across instances.
+- Account throttling has a temporary denial-of-service trade-off.
+- A large botnet distributed across many networks remains a risk.
+- Logout has no separate rate-limit bucket; it is a low-priority review item.
+- Webhook ingress is not implemented and remains Phase 5 work.
 
-### Operational completion notes
-
-- Cleanup: systemd service/timer and Windows scheduled-task script are included; install/enable the matching template for the actual deployment host.
-- Trusted proxy: set TRUSTED_PROXY_IPS to exact proxy addresses/CIDRs, ensure the proxy sanitizes/appends X-Forwarded-For, and run Uvicorn with --no-proxy-headers. Never trust all addresses.
-- Database contention: run python -m scripts.benchmark_rate_limit --workers 20 --requests 500 against a staging database using the same DB engine and worker topology. Compare p50/p95 with the API latency budget; use a dedicated limiter if primary DB write contention is material.
-- Fixed-window boundary burst: a limit of N can allow up to roughly 2N in a short interval spanning a boundary. This is tested and documented; strict burst smoothing requires token bucket/sliding window at a trusted gateway or a dedicated limiter.
-- Password spraying: account-level HMAC throttling constrains distributed attempts but creates a bounded temporary lockout/denial-of-service trade-off. Generic responses reduce account enumeration. This is not a substitute for MFA, breached-password detection, bot controls, or anomaly monitoring.
-- PostgreSQL multi-worker: CI starts PostgreSQL 16 and launches four independent Python processes against one shared bucket; exactly 50 of 100 requests are allowed while all 100 increments are retained. The CI smoke benchmark ran 100 requests with 8 threads at 637.5 req/s, median 7.0 ms, p95 45.6 ms, max 61.0 ms on a GitHub-hosted runner.
+**QA decision:** The seven original Phase 2 findings have been remediated or explicitly converted into deployment-owned actions/residual risks. The automated Phase 2 acceptance evidence is green. PR #5 should remain draft until the final diff review and deployment-specific tasks are complete. This report does not grant production-readiness approval, and PR #5 must not be merged without explicit user approval.
