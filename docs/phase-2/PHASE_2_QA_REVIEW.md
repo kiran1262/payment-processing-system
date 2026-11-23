@@ -305,7 +305,7 @@ This review does not change application code. Findings are recorded for the next
 | P2-QA-01 stale-window race | Upsert keeps the stored window monotonic; stale requests are counted conservatively in the newest bucket. | Deterministic stale-window regression test. |
 | P2-QA-02 invalid policy config | Action limits/windows are validated during module startup, including positive bounds and parse errors. | Subprocess tests for zero, negative, and non-integer values. |
 | P2-QA-03 missing peer identity | Missing ASGI client identity returns generic 503 rather than a shared unknown bucket. | Dependency-level regression test. |
-| P2-QA-04 distributed password spraying | Login uses a 60/15m IP budget and 10/15m HMAC account bucket; generic responses and no raw email persistence. | Login account-budget and HMAC-digest tests. |
+| P2-QA-04 distributed password spraying | Login uses a 60/15m IP budget and 10/15m HMAC account bucket; generic responses and no raw email persistence. | Login IP/network/account-budget and HMAC-digest tests. |
 | P2-QA-05 concurrency/PostgreSQL | Added file-backed SQLite concurrent increment test and PostgreSQL 16 multi-process integration test in CI. | Must pass latest PR CI. |
 | P2-QA-06 cleanup | Added bounded batch deletion and a maintenance command. | Batch cleanup regression; scheduler remains operator-configured. |
 | P2-QA-07 documentation | Master record and README updated with policies, proxy, cleanup, benchmark, and boundary semantics. | Documentation review. |
