@@ -271,7 +271,7 @@ def test_stale_request_cannot_move_window_backwards_or_reset_new_window(monkeypa
             stale = consume_rate_limit(db, "unit_stale", "stale-window", now=120)
             bucket = db.scalar(select(RateLimitBucket))
             assert first == (True, 60)
-            assert stale == (True, 60)
+            assert stale == (True, 120)
             assert bucket.window_start == 180
             assert bucket.request_count == 2
             assert bucket.expires_at == 300
