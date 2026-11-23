@@ -140,11 +140,11 @@ The independent QA report is [`PHASE_2_QA_REVIEW.md`](./PHASE_2_QA_REVIEW.md).
 
 ### Latest verified automated evidence
 
-Verified latest implementation/PR CI evidence recorded for PR head `0c3cda67e5bbb5a2fa2c09c8c629e8c840c0d6c0`:
+Verified latest implementation and documentation CI evidence on PR head `9dedbd4068de0061baed8c6a1864a740c727574d`:
 
 - **61 pytest tests passed, 1 warning**.
 - PostgreSQL 16 multi-process test passed: four processes, 100 requests, exactly 50 allowed, all 100 increments retained.
-- PostgreSQL contention smoke benchmark: 100 requests, 8 workers; 573.0 requests/second, median 5.5 ms, p95 88.5 ms, max 105.3 ms on a GitHub-hosted runner.
+- PostgreSQL contention smoke benchmark: 100 requests, 8 workers; 768.7 requests/second, median 4.7 ms, p95 41.0 ms, max 53.0 ms on a GitHub-hosted runner.
 - `node --check frontend/app.js` passed.
 - Migration tests, including fresh upgrade and model drift checks, passed.
 - The warning is the existing Starlette/httpx TestClient deprecation warning.
@@ -228,7 +228,7 @@ Do not mark deployment readiness complete until these checks are performed in th
 - 2026-11-23: Added migration 0003, route policies, 429/503 handling, frontend retry guidance, and initial tests (47 passed at that baseline).
 - 2026-11-23: Independent QA identified seven issues; findings are recorded in `PHASE_2_QA_REVIEW.md`.
 - 2026-11-23: Follow-up hardening added monotonic windows, startup config validation, missing-peer handling, trusted proxy support, IP/network/account login throttling, bounded cleanup and scheduler templates, SQLite concurrency tests, PostgreSQL 16 multi-process CI, and a contention benchmark.
-- 2026-11-23: Latest verified implementation CI evidence: 61 passed, 1 warning; PostgreSQL multi-process test and contention smoke benchmark passed; frontend syntax passed.
+- 2026-11-23: Latest verified PR head `9dedbd4068de0061baed8c6a1864a740c727574d` passed CI: 61 passed, 1 warning; PostgreSQL multi-process test and contention smoke benchmark passed (768.7 req/s, median 4.7 ms, p95 41.0 ms, max 53.0 ms); frontend syntax passed.
 
 The QA report records the original findings and the follow-up remediation evidence. It should be updated whenever new verification or deployment evidence is obtained.
 
