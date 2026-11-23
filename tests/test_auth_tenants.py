@@ -220,3 +220,11 @@ def test_frontend_refund_action_is_owner_only_and_sidebar_uses_profile_data():
     assert 'id="workspaceName"' in html
     assert 'id="profileRole"' in html
     assert "Kirankumar" not in html
+
+
+
+def test_authenticated_profile_includes_dynamic_workspace_identity(client):
+    profile = client.get("/api/auth/me").json()
+    assert profile["tenant_name"] == "Test Store"
+    assert profile["full_name"] == "Test Owner"
+    assert profile["role"] == "owner"
