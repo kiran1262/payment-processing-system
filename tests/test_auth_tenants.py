@@ -150,3 +150,73 @@ def test_frontend_avoids_unsubstantiated_security_claims():
     assert "all systems operational" not in lowered
     assert "illustrative activity" in lowered
     assert "no real payments" in lowered
+
+
+
+def test_sqlite_foreign_key_constraints_are_enforced():
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import Session
+    from app.database import Base, enable_sqlite_foreign_keys
+    from app.models import User
+
+    engine = enable_sqlite_foreign_keys(create_engine("sqlite://"))
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as db:
+            db.add(User(
+                tenant_id=987654,
+                full_name="Orphan User",
+                email="orphan@example.com",
+                password_hash="not-a-real-hash",
+                role="member",
+            ))
+            try:
+                db.commit()
+                assert False, "SQLite accepted a user with a missing tenant"
+            except IntegrityError:
+                db.rollback()
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_legacy_workspace_owner_bootstrap_is_local_and_one_time():
+    import pytest
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app.auth import bootstrap_legacy_owner, verify_password
+    from app.database import Base, enable_sqlite_foreign_keys
+    from app.models import Tenant
+
+    engine = enable_sqlite_foreign_keys(create_engine("sqlite://"))
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as db:
+            db.add(Tenant(id=1, name="Legacy demo workspace"))
+            db.commit()
+            owner = bootstrap_legacy_owner(
+                db, "Legacy Owner", "legacy-owner@example.com", "legacy-owner-password"
+            )
+            assert owner.tenant_id == 1
+            assert owner.role == "owner"
+            assert verify_password("legacy-owner-password", owner.password_hash)
+            with pytest.raises(ValueError, match="one-time only"):
+                bootstrap_legacy_owner(
+                    db, "Second Owner", "second-legacy@example.com", "another-password"
+                )
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_frontend_refund_action_is_owner_only_and_sidebar_uses_profile_data():
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "frontend" / "app.js").read_text()
+    html = (root / "frontend" / "index.html").read_text()
+    assert 'currentUser?.role==="owner" && p.status==="succeeded"' in js
+    assert 'el("workspaceName").textContent = workspaceName' in js
+    assert 'el("profileName").textContent = user.full_name' in js
+    assert 'id="workspaceName"' in html
+    assert 'id="profileRole"' in html
+    assert "Kirankumar" not in html
