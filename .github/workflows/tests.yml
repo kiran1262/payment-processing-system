@@ -16,4 +16,4 @@ jobs:
           cache: "pip"
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
-      - run: python -m pytest -v
+      - name: Check frontend JavaScript syntax\n        run: node --check frontend/app.js\n      - run: python -m pytest -v
