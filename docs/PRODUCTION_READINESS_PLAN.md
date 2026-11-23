@@ -2,10 +2,24 @@
 
 **Project:** Payment Processing System  
 **Tracking PR:** [#2 — production-readiness roadmap](https://github.com/kiran1262/payment-processing-system/pull/2)  
-**Status:** Planning only — none of the production-readiness items below is implemented by this document.  
+**Status:** Phases 0 and 1 have implementation in PRs #3 and #4. Phase 1 is undergoing final regression review; phases 2–6 remain planned. This plan tracks production-readiness work, not a claim that the demo is production-ready.  
 **Rule:** Work on one item at a time. Do not combine unrelated security, schema, and payment-accounting changes into one large patch.
 
 This application is currently an educational payment simulation. Do not expose it publicly or use it to process real money until the required controls have been implemented, tested, and independently reviewed.
+
+## Current implementation status
+
+| Phase | Status | Evidence / remaining gate |
+|---|---|---|
+| 0. Alembic migration foundation | **Implemented** | PR #3 is merged. Alembic owns schema changes; startup does not call `create_all`. Migration tests cover fresh upgrade, existing-row preservation, and metadata drift. |
+| 1. Authentication, authorization, tenant isolation | **Implemented in PR #4; final review in progress** | Registration/login/logout, 12-hour revocable bearer sessions, owner/member roles, tenant-scoped payment operations and idempotency, migration 0002, and regression tests are present. Final review also covers SQLite FK enforcement, legacy workspace owner bootstrap, role-aware frontend controls, dynamic profile identity, and browser E2E coverage. |
+| 2. Rate limiting and abuse controls | **Not started** | Shared-store limits for auth, payment, refund, reads, and webhook ingress. |
+| 3. Audit logging | **Not started** | Append-only, transactionally consistent business audit events. |
+| 4. Ledger and reconciliation | **Not started** | Immutable balanced double-entry postings and provider reconciliation. |
+| 5. Provider integration and webhook verification | **Not started** | Provider selection, signature/replay verification, durable event deduplication. |
+| 6. PostgreSQL concurrency and failure-injection tests | **Not started** | Real PostgreSQL integration tests, concurrent operations, rollback and duplicate-event tests. |
+
+Phase 1 does not make this application a production payment platform. Session storage remains XSS-exposed, and no real payment provider or funds movement is involved.
 
 ## Current code map and reuse-first rules
 
