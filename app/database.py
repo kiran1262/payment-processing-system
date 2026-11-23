@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from .config import DATABASE_URL
@@ -20,10 +21,40 @@ def enable_sqlite_foreign_keys(engine):
     return engine
 
 
-# SQLite needs this connection option for FastAPI's request/test threading.
-# Other SQLAlchemy dialects (for example PostgreSQL) must not receive it.
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = enable_sqlite_foreign_keys(create_engine(DATABASE_URL, connect_args=connect_args))
+def create_application_engine(database_url: str):
+    """Create an engine with connection behavior appropriate to the database host."""
+    url = make_url(database_url)
+    if url.get_backend_name() == "sqlite":
+        engine = create_engine(
+            database_url,
+            connect_args={"check_same_thread": False},
+        )
+        return enable_sqlite_foreign_keys(engine)
+
+    # Supabase's shared transaction pooler is intended for serverless workloads.
+    # Keep one reusable client connection per warm Vercel instance, require TLS,
+    # and disable psycopg automatic prepared statements (unsupported by the
+    # shared transaction pooler). Pre-ping/recycle handle frozen warm instances.
+    is_supabase_transaction_pooler = (
+        url.port == 6543
+        and bool(url.host)
+        and url.host.endswith(".pooler.supabase.com")
+    )
+    if is_supabase_transaction_pooler:
+        return create_engine(
+            database_url,
+            pool_size=1,
+            max_overflow=0,
+            pool_timeout=10,
+            pool_recycle=300,
+            pool_pre_ping=True,
+            connect_args={"sslmode": "require", "prepare_threshold": None},
+        )
+
+    return create_engine(database_url, pool_pre_ping=True)
+
+
+engine = create_application_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

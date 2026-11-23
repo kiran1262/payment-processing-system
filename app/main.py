@@ -1,9 +1,10 @@
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from hashlib import sha256
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
@@ -19,11 +20,41 @@ from .database import get_db
 from .models import AuthSession, Payment, Tenant, User
 from .schemas import LoginRequest, MemberCreate, PaymentCreate, RegisterRequest
 from .services import IdempotencyConflictError, create_payment, dashboard_stats, refund_payment
+from .rate_limit import enforce_rate_limit, login_network_identity, rate_limit_ip, rate_limit_user
+from .proxy import resolve_forwarded_client_ip, resolve_vercel_client_ip
+from .config import TRUSTED_PROXY_NETWORKS
 
 logger = logging.getLogger(__name__)
 BASE = Path(__file__).resolve().parent.parent
 app = FastAPI(title="Payment Processing System", version="1.2.0")
 app.mount("/static", StaticFiles(directory=BASE / "frontend"), name="static")
+
+
+@app.middleware("http")
+async def trusted_proxy_middleware(request, call_next):
+    """Resolve client IPs using the active hosting platform's trust boundary."""
+    peer = request.client
+
+    # Vercel documents that it overwrites X-Forwarded-For with the public client
+    # IP. Do not apply the self-hosted TRUSTED_PROXY_IPS list to Vercel's proxy.
+    if os.environ.get("VERCEL") == "1":
+        resolved = resolve_vercel_client_ip(request.headers.get("x-forwarded-for"))
+        if resolved is None:
+            # Public IP rate limits must fail closed rather than share a runtime IP.
+            request.scope["client"] = None
+        else:
+            request.scope["client"] = (resolved, peer.port if peer else 0)
+        return await call_next(request)
+
+    # For self-hosted deployments, trust forwarded headers only from an explicitly
+    # configured immediate proxy. Uvicorn proxy-header parsing stays disabled.
+    if peer is not None and TRUSTED_PROXY_NETWORKS:
+        resolved = resolve_forwarded_client_ip(
+            peer.host, request.headers.get("x-forwarded-for"), TRUSTED_PROXY_NETWORKS
+        )
+        if resolved != peer.host:
+            request.scope["client"] = (resolved, peer.port)
+    return await call_next(request)
 
 
 @app.get("/", include_in_schema=False)
@@ -49,7 +80,11 @@ def readiness(db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(
+    payload: RegisterRequest,
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_ip("register")),
+):
     try:
         tenant, user, token, expires_at = create_tenant_owner(
             db, payload.tenant_name, payload.full_name, str(payload.email), payload.password
@@ -64,8 +99,17 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login")
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
+def login(
+    payload: LoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_ip("login")),
+):
+    normalized_email = str(payload.email).strip().lower()
+    peer_host = request.client.host if request.client is not None else ""
+    enforce_rate_limit(db, "login_network", login_network_identity(peer_host))
+    enforce_rate_limit(db, "login_account", f"email:{normalized_email}")
+    user = db.scalar(select(User).where(User.email == normalized_email))
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(401, "Invalid email or password", headers={"WWW-Authenticate": "Bearer"})
     token, expires_at = issue_session(db, user)
@@ -76,7 +120,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @app.get("/api/auth/me")
-def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def me(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("read")),
+):
     return user_json(user, db)
 
 
@@ -101,6 +149,7 @@ def create_member(
     payload: MemberCreate,
     owner: User = Depends(require_owner),
     db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("member_create")),
 ):
     member = User(
         tenant_id=owner.tenant_id, full_name=payload.full_name.strip(),
@@ -118,7 +167,11 @@ def create_member(
 
 
 @app.get("/api/dashboard")
-def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def dashboard(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("read")),
+):
     return dashboard_stats(db, user.tenant_id)
 
 
@@ -127,6 +180,7 @@ def list_payments(
     limit: int = Query(default=100, ge=1, le=250),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("read")),
 ):
     rows = db.scalars(select(Payment).where(Payment.tenant_id == user.tenant_id)
         .order_by(Payment.id.desc()).limit(limit)).all()
@@ -139,6 +193,7 @@ def new_payment(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=1, max_length=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("payment_create")),
 ):
     try:
         payment, replayed = create_payment(db, payload, idempotency_key, user.tenant_id)
@@ -156,7 +211,12 @@ def new_payment(
 
 
 @app.get("/api/payments/{payment_id}")
-def get_payment(payment_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_payment(
+    payment_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("read")),
+):
     payment = db.scalar(select(Payment).where(
         Payment.payment_id == payment_id, Payment.tenant_id == user.tenant_id
     ))
@@ -166,7 +226,12 @@ def get_payment(payment_id: str, user: User = Depends(get_current_user), db: Ses
 
 
 @app.post("/api/payments/{payment_id}/refund")
-def refund(payment_id: str, owner: User = Depends(require_owner), db: Session = Depends(get_db)):
+def refund(
+    payment_id: str,
+    owner: User = Depends(require_owner),
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("refund")),
+):
     payment = db.scalar(select(Payment).where(
         Payment.payment_id == payment_id, Payment.tenant_id == owner.tenant_id
     ))

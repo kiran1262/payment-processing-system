@@ -12,11 +12,16 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Keep the application and migration command on the same configured database.
-# DATABASE_URL takes precedence for deployments; alembic.ini is the local fallback.
-database_url = os.environ.get("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+# Use a direct/session database connection for schema changes when supplied.
+# Runtime DATABASE_URL may use Supabase's transaction pooler, which is intended
+# for short application transactions rather than migration sessions.
+database_url = (
+    os.environ.get("MIGRATION_DATABASE_URL")
+    or os.environ.get("DATABASE_URL")
+    or config.get_main_option("sqlalchemy.url")
+)
 if not database_url:
-    raise RuntimeError("Set DATABASE_URL or sqlalchemy.url in alembic.ini.")
+    raise RuntimeError("Set MIGRATION_DATABASE_URL, DATABASE_URL, or sqlalchemy.url in alembic.ini.")
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
