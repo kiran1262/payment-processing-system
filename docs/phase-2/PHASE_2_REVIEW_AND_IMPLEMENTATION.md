@@ -4,7 +4,7 @@
 > Project: `kiran1262/payment-processing-system`  
 > Base: `main` (PR #4 merged)  
 > Working branch: `feat/phase-2-rate-limiting-abuse-controls`  
-> Status: **Phase 2 hardening implemented; PostgreSQL multi-process CI added; final latest-head verification pending**  
+ > Status: **Hardening verified on code commit d1eba7c9e804d2ef1bb1a9d954189427478e926b: 61 tests passed; PostgreSQL concurrency and CI contention smoke benchmark passed. Documentation/deployment templates are included; deployment-specific proxy/scheduler activation remains operator-owned.**  
 > Scope: API rate limiting and abuse controls. This document is updated as findings are verified and fixes land. The independent QA findings for the current implementation are recorded in [`PHASE_2_QA_REVIEW.md`](./PHASE_2_QA_REVIEW.md).
 
 ---
@@ -163,7 +163,7 @@ These are conservative demo defaults, not universal production recommendations. 
 |---|---|---|---|
 | 2026-11-23 | Created this master record and began source audit on a branch from merged Phase 1 `main`. | PR #4 verified merged; source inventory captured. | Complete |
 | 2026-11-23 | Added the initial atomic fixed-window limiter, migration 0003, route dependencies, safe 429/503 behavior, frontend guidance, and initial tests. | Baseline before the follow-up hardening batch: 47 passed, 1 warning. | Baseline complete |
-| 2026-11-23 | Hardened monotonic window updates, startup policy validation, missing-peer handling, trusted proxy chain resolution, HMAC account login throttling, bounded cleanup command, SQLite concurrency test, PostgreSQL 16 multi-process CI, and contention benchmark. | Latest-head CI is being rerun; do not treat the earlier 47-test result as verification of this batch. | Verification pending |
+| 2026-11-23 | Hardened monotonic window updates, startup policy validation, missing-peer handling, trusted proxy chain resolution, HMAC IP/network/account login throttling, bounded cleanup command and scheduler templates, SQLite concurrency test, PostgreSQL 16 multi-process CI, and contention benchmark. | Code commit `d1eba7c9e804d2ef1bb1a9d954189427478e926b`: **61 passed, 1 warning**; PostgreSQL multi-process test passed; benchmark 100 requests/8 workers: 604.7 req/s, median 7.9 ms, p95 41.8 ms, max 57.4 ms on GitHub-hosted runner; frontend syntax passed. | Verified in CI |
 
 ## 9. Current implementation details and residual review
 
@@ -190,7 +190,7 @@ These are conservative demo defaults, not universal production recommendations. 
 - Client IP uses the ASGI socket peer unless TRUSTED_PROXY_IPS explicitly trusts the immediate proxy and a valid X-Forwarded-For chain. Run Uvicorn with --no-proxy-headers so the application's explicit trust allowlist is authoritative.
 - Login uses both a generous IP budget (60/15m to reduce NAT collateral) and a per-account HMAC bucket (10/15m) to constrain distributed password spraying. This creates a bounded 15-minute account-level denial-of-service trade-off; throttle responses are generic and the email is never stored in the limiter table.
 - Webhook ingress does not exist and remains a Phase 5 concern.
-- PostgreSQL multi-process correctness is exercised in CI against PostgreSQL 16. Deployment-specific throughput, p95 latency, and write-contention benchmarking remain required.
+- PostgreSQL multi-process correctness is exercised in CI against PostgreSQL 16. A CI smoke benchmark measured 100 requests with 8 workers at 604.7 req/s, median 7.9 ms, p95 41.8 ms, and max 57.4 ms on a GitHub-hosted runner. These are runner-specific smoke figures, not a production capacity claim; benchmark the target database and worker topology.
 
 ## 10. Known limitations and explicit non-goals
 
@@ -234,7 +234,7 @@ The initial QA pass was documentation-only. The follow-up hardening batch addres
 - [ ] Record each new bug with severity, exact file/route, reproduction, and regression test.
 - [x] Fix verified Phase 2 limiter issues while preserving payment/auth behavior.
 - [ ] Add Alembic migration for schema changes; no startup schema creation.
-- [ ] Run focused tests, full pytest, migration drift check, SQLite concurrency, PostgreSQL multi-process concurrency, and frontend syntax check on the latest head.
+- [x] Run focused tests, full pytest, migration drift check, SQLite concurrency, PostgreSQL multi-process concurrency, PostgreSQL contention smoke benchmark, and frontend syntax check on code commit `d1eba7c9e804d2ef1bb1a9d954189427478e926b`.
 - [ ] Inspect final diff for tenant leaks, role bypass, transaction regressions, and secrets in logs.
 - [ ] Update this file with latest commit SHA and actual CI evidence.
 - [ ] Keep PR draft/open until final review; do not merge without explicit user approval.
