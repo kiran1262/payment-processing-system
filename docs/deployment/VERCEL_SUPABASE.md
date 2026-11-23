@@ -18,6 +18,7 @@ Keep the Vercel Function region close to the Supabase project region where your 
 3. Copy the transaction-pooler connection string. It normally uses port **6543**.
 4. Convert the URL scheme from `postgresql://` to `postgresql+psycopg://` so SQLAlchemy uses the installed Psycopg 3 driver.
 5. URL-encode special characters in the database password before placing it in the URL.
+6. **Disable the Supabase Data API** for this project because the application uses direct PostgreSQL connections and does not use Supabase REST, GraphQL, or client libraries. This prevents the app's tables from being reachable through an unused API surface. If you intentionally keep the Data API enabled, verify that application tables have no `anon`/`authenticated` grants and have appropriate RLS protection; do not expose the tables to the browser.
 
 The application engine detects Supabase's shared transaction pooler (port 6543), uses SQLAlchemy `NullPool`, requires TLS, and disables Psycopg automatic prepared statements. These settings are specific to the shared transaction pooler.
 
