@@ -42,7 +42,7 @@ def test_login_is_throttled_by_socket_ip_and_returns_retry_after(client, monkeyp
     monkeypatch.setitem(POLICIES, "login", (1, 900))
     credentials = {"email": "owner@example.com", "password": "correct-horse-battery"}
     first = client.post("/api/auth/login", json=credentials, headers={"X-Forwarded-For": "198.51.100.1"})
-    second = client.post("/api/auth/login", json=credentials, headers={"X-Forwarded-For": "203.0.113.99"})
+    second = client.post("/api/auth/login", json={**credentials, "email": "not-the-same-account@example.com"}, headers={"X-Forwarded-For": "203.0.113.99"})
     assert first.status_code == 200
     assert second.status_code == 429
     assert int(second.headers["Retry-After"]) > 0
@@ -154,3 +154,24 @@ def test_refund_and_member_creation_have_separate_limits(client, monkeypatch):
         **member, "email": "second-member@example.com"
     })
     assert blocked_member.status_code == 429
+
+
+
+def test_failed_login_attempts_consume_the_ip_budget(client, monkeypatch):
+    monkeypatch.setitem(POLICIES, "login", (1, 900))
+    failed = client.post("/api/auth/login", json={
+        "email": "owner@example.com", "password": "incorrect-password"
+    })
+    blocked = client.post("/api/auth/login", json={
+        "email": "owner@example.com", "password": "correct-horse-battery"
+    })
+    assert failed.status_code == 401
+    assert blocked.status_code == 429
+
+
+def test_frontend_displays_retry_after_for_rate_limit_responses():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text()
+    assert 'response.headers.get("Retry-After")' in source
+    assert "Please retry in" in source
