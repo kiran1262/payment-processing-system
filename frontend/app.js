@@ -1,13 +1,23 @@
 const money = value => new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(value || 0);
 const el = id => document.getElementById(id);
 const token = () => sessionStorage.getItem("payment_demo_token");
+let currentUser = null;
 function setAuthenticated(user){
+  currentUser = user;
   document.body.classList.add("authenticated");
   el("authMessage").textContent = "";
   el("logoutBtn").hidden = false;
-  if(user) console.info("Signed in to tenant", user.tenant_id);
+  const workspaceName = user.tenant_name || "Demo workspace";
+  const initials = (user.full_name || "U").trim().split(/\s+/).slice(0,2).map(part=>part[0]).join("").toUpperCase();
+  el("workspaceName").textContent = workspaceName;
+  el("workspaceAvatar").textContent = workspaceName.slice(0,1).toUpperCase();
+  el("profileName").textContent = user.full_name;
+  el("profileRole").textContent = user.role === "owner" ? "Owner" : "Member";
+  el("profileAvatar").textContent = initials;
+  el("topbarAvatar").textContent = initials;
 }
 function clearAuthentication(message=""){
+  currentUser = null;
   sessionStorage.removeItem("payment_demo_token");
   document.body.classList.remove("authenticated");
   el("logoutBtn").hidden = true;
@@ -71,7 +81,7 @@ function renderPayments(payments){
   if(!payments.length){body.innerHTML='<tr><td colspan="7" class="empty">No transactions yet. Create your first simulated payment.</td></tr>';return;}
   body.innerHTML=payments.map(p=>{
     const date=p.created_at?new Date(p.created_at).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
-    const canRefund=p.status==="succeeded";
+    const canRefund=currentUser?.role==="owner" && p.status==="succeeded";
     return `<tr><td class="payment-ref">${escapeHtml(p.payment_id)}</td><td class="customer-cell"><b>${escapeHtml(p.customer_name)}</b><small>${escapeHtml(p.customer_email)}</small></td><td>${date}</td><td>${escapeHtml(p.method)}</td><td><b>${money(p.amount)}</b></td><td><span class="status ${p.status}">${p.status}</span></td><td>${canRefund?'<button class="refund-btn" data-refund="'+escapeHtml(p.payment_id)+'">Refund</button>':""}</td></tr>`;
   }).join("");
 }
