@@ -90,7 +90,9 @@ def login(
     db: Session = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_ip("login")),
 ):
-    user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
+    normalized_email = str(payload.email).strip().lower()
+    enforce_rate_limit(db, "login_account", f"email:{normalized_email}")
+    user = db.scalar(select(User).where(User.email == normalized_email))
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(401, "Invalid email or password", headers={"WWW-Authenticate": "Bearer"})
     token, expires_at = issue_session(db, user)
