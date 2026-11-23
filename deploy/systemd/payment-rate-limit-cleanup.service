@@ -1,0 +1,9 @@
+[Unit]
+Description=Delete expired Payment Processing System rate-limit buckets
+
+[Service]
+Type=oneshot
+User=payment-app
+WorkingDirectory=/opt/payment-processing-system
+EnvironmentFile=/etc/payment-processing-system.env
+ExecStart=/opt/payment-processing-system/.venv/bin/python -m app.maintenance purge-rate-limits --batch-size 1000
