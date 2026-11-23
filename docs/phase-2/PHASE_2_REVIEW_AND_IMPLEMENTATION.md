@@ -243,3 +243,27 @@ The QA report records the original findings and the follow-up remediation eviden
 - [ ] Complete deployment-specific proxy/scheduler/secret/benchmark actions in section 9.
 - [ ] Inspect final PR diff and confirm GitHub reports it mergeable before requesting review.
 - [ ] Keep PR draft/open until final review; do not merge without explicit user approval.
+
+
+## 14. Selected deployment target — Vercel + Supabase
+
+The deployment target selected for this project is **Vercel + Supabase PostgreSQL**. The implementation and operator procedure are documented in [`docs/deployment/VERCEL_SUPABASE.md`](../deployment/VERCEL_SUPABASE.md).
+
+Deployment-specific changes added on the Phase 2 branch:
+- `api/index.py` exports the existing FastAPI application for Vercel's Python runtime.
+- `vercel.json` explicitly includes `frontend/**` in the function bundle because FastAPI serves those assets.
+- `app/database.py` detects Supabase's shared transaction pooler on port 6543 and uses SQLAlchemy `NullPool`, TLS, and disabled Psycopg automatic prepared statements.
+- `app/proxy.py` and `app/main.py` use Vercel's documented platform-overwritten `X-Forwarded-For` client IP when `VERCEL=1`. Missing or malformed values fail closed for public IP-limited routes. Self-hosted proxy allowlisting remains unchanged.
+- `alembic/env.py` accepts `MIGRATION_DATABASE_URL` so schema migrations can use a direct/session connection instead of the serverless transaction pooler.
+- `supabase/cron/purge_rate_limit_buckets.sql` schedules an expiry cleanup of at most 1,000 rows every ten minutes using Supabase pg_cron.
+
+### Operator-owned setup still required
+
+- [ ] Create the Supabase project and choose the database region.
+- [ ] Apply Alembic migrations using `MIGRATION_DATABASE_URL`.
+- [ ] Configure Vercel `APP_ENV`, transaction-pooler `DATABASE_URL`, and unique high-entropy `RATE_LIMIT_HASH_SECRET`.
+- [ ] Import the repository into Vercel and verify Preview deployment, frontend assets, API health/readiness, and docs.
+- [ ] Run the Supabase pg_cron SQL script and verify successful job history.
+- [ ] Complete browser E2E, cross-instance rate-limit, latency, connection-use, monitoring, backup/restore, and rollback checks.
+
+No Supabase project, Vercel project, production credentials, migration, cron job, or live deployment has been created/configured by these repository changes. PR #5 remains draft/open and must not be merged without explicit approval.
