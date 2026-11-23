@@ -218,7 +218,8 @@ Do not make the demo publicly accessible until the above controls are implemente
     │   ├── script.py.mako
     │   └── versions/
     │       ├── 0001_initial_schema.py
-    │       └── 0002_tenants_auth_and_scoped_idempotency.py
+    │       ├── 0002_tenants_auth_and_scoped_idempotency.py
+    │       └── 0003_rate_limit_buckets.py
     ├── app/
     │   ├── __init__.py
     │   ├── config.py
@@ -243,12 +244,21 @@ Do not make the demo publicly accessible until the above controls are implemente
     │       └── cleanup-rate-limits.ps1
     ├── scripts/
     │   └── benchmark_rate_limit.py
+    ├── supabase/
+    │   └── cron/
+    │       └── purge_rate_limit_buckets.sql
+    ├── docs/
+    │   └── deployment/
+    │       └── VERCEL_SUPABASE.md
     ├── tests/
     │   ├── conftest.py
     │   ├── test_auth_tenants.py
     │   ├── test_migrations.py
     │   ├── test_payments.py
     │   └── test_rate_limiting.py
+    ├── main.py
+    ├── vercel.json
+    ├── .python-version
     ├── alembic.ini
     ├── .gitignore
     ├── README.md
