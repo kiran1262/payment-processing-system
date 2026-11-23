@@ -438,9 +438,9 @@ The CI run associated with the reviewed PR #3 commit reported **17 tests passed*
 | Area | Current position | Why it matters |
 |---|---|---|
 | Real payment provider | Not integrated | The application only simulates payment outcomes |
-| Authentication | Not implemented | API routes do not establish who is making a request |
-| Authorization | Not implemented | There are no verified user roles or permissions |
-| Tenant isolation | Not implemented | Records are not scoped to separate customers/businesses |
+| Authentication | Implemented in PR #4 | Registration/login, PBKDF2 password hashes, expiring/revocable bearer sessions, and authenticated payment APIs |
+| Authorization | Implemented in PR #4 | Owner/member roles; owner-only refunds and member management |
+| Tenant isolation | Implemented in PR #4 | Tenant ownership is derived from the authenticated user; payment reads, writes, dashboard aggregates, and idempotency are tenant-scoped |
 | Rate limiting | Not implemented | Publicly reachable endpoints could be abused |
 | Audit trail | Not implemented | There is no durable business record of who performed sensitive actions |
 | Accounting ledger | Not implemented | A payment status row is not a full accounting system |
@@ -454,23 +454,25 @@ The dashboard includes a decorative activity chart in the HTML/SVG. It is not cu
 
 ### Important backend/security note
 
-The current API has no authentication or tenant boundary. That is acceptable only within the clearly labelled local learning demo. Do not expose it publicly or use it with real customer/payment data.
+The API now has application-level authentication, owner/member authorization, and tenant isolation (PR #4). This is a learning-demo implementation, not a production identity/session architecture: bearer tokens are stored in browser sessionStorage and remain exposed to XSS/browser compromise. Rate limiting, durable audit logging, a double-entry ledger, provider integration, signed webhooks, PostgreSQL concurrency verification, production secrets/TLS, and independent security review remain outstanding. Do not expose it publicly or use real customer/payment data.
 
 See docs/PRODUCTION_READINESS_PLAN.md for the ordered work needed before considering a real deployment.
 
 ---
 
-## 11. What should happen after PR #3?
+## 11. Current delivery status and remaining phases
 
-The project roadmap intentionally works in small, reviewable phases:
+The project has progressed beyond PR #3:
 
-1. **Alembic migrations** — safe, explicit database schema changes.
-2. **Authentication, authorization, and tenant isolation** — establish who can access which records.
-3. **Rate limiting** — reduce abuse and protect expensive/sensitive endpoints.
-4. **Audit logging** — record important actions safely.
-5. **Ledger and reconciliation** — account for financial events correctly.
-6. **Provider integration and webhook verification** — connect to a real provider only after choosing one and following its official security rules.
-7. **PostgreSQL concurrency and failure-injection tests** — verify behavior under real database contention and failures.
+1. **Phase 0 — Alembic migration foundation:** completed and merged in PR #3.
+2. **Phase 1 — Authentication, authorization, and tenant isolation:** implemented in PR #4; final review and browser-level verification remain before merge.
+3. **Phase 2 — Rate limiting:** not started; requires shared-store limits and 429/Retry-After behavior.
+4. **Phase 3 — Audit logging:** not started; requires append-only, transactionally consistent business events.
+5. **Phase 4 — Ledger and reconciliation:** not started; requires immutable balanced double-entry postings and reconciliation.
+6. **Phase 5 — Provider integration and webhook verification:** not started; depends on provider selection and official signature/replay rules.
+7. **Phase 6 — PostgreSQL concurrency and failure-injection tests:** not started; validate multi-worker behavior, concurrent refunds/idempotency, duplicate webhooks, and rollback behavior.
+
+A separate deployment gate remains after these phases: secrets management, TLS, monitoring/alerting, backup/restore, deployment/rollback procedures, compliance review, and independent security review.
 
 Each phase should have its own focused implementation, tests, and review. Do not combine all phases into one large PR.
 

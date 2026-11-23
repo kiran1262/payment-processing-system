@@ -1,41 +1,63 @@
 const money = value => new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(value || 0);
 const el = id => document.getElementById(id);
+const token = () => sessionStorage.getItem("payment_demo_token");
+let currentUser = null;
+function setAuthenticated(user){
+  currentUser = user;
+  document.body.classList.add("authenticated");
+  el("authMessage").textContent = "";
+  el("logoutBtn").hidden = false;
+  const workspaceName = user.tenant_name || "Demo workspace";
+  const initials = (user.full_name || "U").trim().split(/\s+/).slice(0,2).map(part=>part[0]).join("").toUpperCase();
+  el("workspaceName").textContent = workspaceName;
+  el("workspaceAvatar").textContent = workspaceName.slice(0,1).toUpperCase();
+  el("profileName").textContent = user.full_name;
+  el("profileRole").textContent = user.role === "owner" ? "Owner" : "Member";
+  el("profileAvatar").textContent = initials;
+  el("topbarAvatar").textContent = initials;
+}
+function clearAuthentication(message=""){
+  currentUser = null;
+  sessionStorage.removeItem("payment_demo_token");
+  document.body.classList.remove("authenticated");
+  el("logoutBtn").hidden = true;
+  el("authMessage").textContent = message;
+  el("authMessage").className = message ? "form-message error" : "form-message";
+}
 async function request(url, options = {}) {
-  // Keep JSON Content-Type while preserving custom headers such as Idempotency-Key.
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    }
-  });
-
-  const data = await response.json().catch(() => ({
-    detail: "Unexpected server response"
-  }));
-
-  if (!response.ok) {
-    const detail = data.detail;
-    let message;
-
-    if (Array.isArray(detail)) {
-      message = detail.map(item => {
-        const field = Array.isArray(item.loc)
-          ? item.loc.filter(part => part !== "body").join(" → ")
-          : "Validation error";
-        return `${field || "Request"}: ${item.msg || "Invalid value"}`;
-      }).join("; ");
-    } else if (detail && typeof detail === "object") {
-      message = JSON.stringify(detail);
-    } else {
-      message = detail || `Request failed (${response.status})`;
-    }
-
+  const headers = {"Content-Type":"application/json",...(options.headers || {})};
+  if(token()) headers.Authorization = `Bearer ${token()}`;
+  const response = await fetch(url,{...options,headers});
+  const data = await response.json().catch(()=>({detail:"Unexpected server response"}));
+  if(!response.ok){
+    const detail=data.detail;
+    const message=Array.isArray(detail)?detail.map(item=>item.msg||"Invalid value").join("; "):(detail||`Request failed (${response.status})`);
+    if(response.status===401 && url!=="/api/auth/login" && url!=="/api/auth/register") clearAuthentication("Your session expired. Please sign in again.");
     throw new Error(message);
   }
-
   return data;
 }
+async function authenticate(path, values){
+  const result=await request(path,{method:"POST",body:JSON.stringify(values)});
+  sessionStorage.setItem("payment_demo_token",result.access_token);
+  setAuthenticated(result.user);
+  await loadDashboard();
+}
+el("loginForm").addEventListener("submit",async event=>{
+  event.preventDefault();const form=event.currentTarget;
+  try{await authenticate("/api/auth/login",Object.fromEntries(new FormData(form).entries()));form.reset();}
+  catch(error){el("authMessage").textContent=error.message;el("authMessage").className="form-message error";}
+});
+el("registerForm").addEventListener("submit",async event=>{
+  event.preventDefault();const form=event.currentTarget;
+  try{await authenticate("/api/auth/register",Object.fromEntries(new FormData(form).entries()));form.reset();}
+  catch(error){el("authMessage").textContent=error.message;el("authMessage").className="form-message error";}
+});
+el("logoutBtn").addEventListener("click",async()=>{
+  try{if(token()) await request("/api/auth/logout",{method:"POST"});}
+  catch(error){console.warn("Logout request failed",error);}
+  clearAuthentication("You have signed out.");
+});
 async function loadDashboard(){
   try{
     const [stats,payments]=await Promise.all([request("/api/dashboard"),request("/api/payments")]);
@@ -49,18 +71,26 @@ async function loadDashboard(){
     el("walletCount").textContent=stats.methods.Wallet;
     el("netCount").textContent=stats.methods["Net Banking"];
     renderPayments(payments);
-  }catch(error){console.error(error);el("formMessage").textContent=`Could not load data: ${error.message}`;el("formMessage").className="form-message error";}
+  }catch(error){
+    console.error(error);
+    if(token()){el("formMessage").textContent=`Could not load data: ${error.message}`;el("formMessage").className="form-message error";}
+  }
 }
 function renderPayments(payments){
   const body=el("transactionRows");
-  if(!payments.length){body.innerHTML='<tr><td colspan="7" class="empty">No transactions yet. Create your first payment.</td></tr>';return;}
+  if(!payments.length){body.innerHTML='<tr><td colspan="7" class="empty">No transactions yet. Create your first simulated payment.</td></tr>';return;}
   body.innerHTML=payments.map(p=>{
     const date=p.created_at?new Date(p.created_at).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
-    const canRefund=p.status==="succeeded";
-    return `<tr><td class="payment-ref">${escapeHtml(p.payment_id)}</td><td class="customer-cell"><b>${escapeHtml(p.customer_name)}</b><small>${escapeHtml(p.customer_email)}</small></td><td>${date}</td><td>${escapeHtml(p.method)}</td><td><b>${money(p.amount)}</b></td><td><span class="status ${p.status}">${p.status}</span></td><td>${canRefund?`<button class="refund-btn" data-refund="${escapeHtml(p.payment_id)}">Refund</button>`:""}</td></tr>`;
+    const canRefund=currentUser?.role==="owner" && p.status==="succeeded";
+    return `<tr><td class="payment-ref">${escapeHtml(p.payment_id)}</td><td class="customer-cell"><b>${escapeHtml(p.customer_name)}</b><small>${escapeHtml(p.customer_email)}</small></td><td>${date}</td><td>${escapeHtml(p.method)}</td><td><b>${money(p.amount)}</b></td><td><span class="status ${p.status}">${p.status}</span></td><td>${canRefund?'<button class="refund-btn" data-refund="'+escapeHtml(p.payment_id)+'">Refund</button>':""}</td></tr>`;
   }).join("");
 }
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+async function fingerprint(values){
+  const bytes=new TextEncoder().encode(JSON.stringify(values));
+  const digest=await crypto.subtle.digest("SHA-256",bytes);
+  return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,"0")).join("");
+}
 el("paymentForm").addEventListener("submit",async event=>{
   event.preventDefault();
   const form=event.currentTarget,button=el("payBtn"),message=el("formMessage");
@@ -68,17 +98,26 @@ el("paymentForm").addEventListener("submit",async event=>{
   values.amount=Number(values.amount);
   button.disabled=true;button.textContent="Processing…";message.textContent="";message.className="form-message";
   try{
-    const result=await request("/api/payments",{method:"POST",headers:{"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(values)});
-    message.textContent=result.status==="succeeded"?`✓ Payment ${result.payment_id} completed successfully.`:`Payment ${result.payment_id} was declined (demo scenario).`;
+    const requestFingerprint=await fingerprint(values);
+    let key=sessionStorage.getItem("pending_payment_key");
+    const previousFingerprint=sessionStorage.getItem("pending_payment_fingerprint");
+    if(!key || previousFingerprint!==requestFingerprint){
+      key=crypto.randomUUID();
+      sessionStorage.setItem("pending_payment_key",key);
+      sessionStorage.setItem("pending_payment_fingerprint",requestFingerprint);
+    }
+    const result=await request("/api/payments",{method:"POST",headers:{"Idempotency-Key":key},body:JSON.stringify(values)});
+    sessionStorage.removeItem("pending_payment_key");
+    sessionStorage.removeItem("pending_payment_fingerprint");
+    message.textContent=result.status==="succeeded"?`✓ Simulated payment ${result.payment_id} completed.`:`Simulated payment ${result.payment_id} was declined.`;
     if(result.status==="declined")message.className="form-message error";
     form.reset();await loadDashboard();
-  } catch (error) {
-    console.error("Payment request failed:", error);
-    message.textContent = error.message || "Payment could not be processed. Please try again.";
-    message.className = "form-message error";
-  } finally {
-    button.disabled = false;
-    button.innerHTML = 'Process payment <span>→</span>';
+  }catch(error){
+    console.error("Payment request failed:",error);
+    message.textContent=`${error.message||"Payment request failed."} If the response was lost, retry without changing the form to safely reuse the same request key.`;
+    message.className="form-message error";
+  }finally{
+    button.disabled=false;button.innerHTML='Process simulated payment <span>→</span>';
   }
 });
 el("transactionRows").addEventListener("click",async event=>{
@@ -89,4 +128,8 @@ el("transactionRows").addEventListener("click",async event=>{
   catch(error){alert(error.message);button.disabled=false;}
 });
 el("refreshBtn").addEventListener("click",loadDashboard);
-loadDashboard();
+(async()=>{
+  if(!token())return;
+  try{const user=await request("/api/auth/me");setAuthenticated(user);await loadDashboard();}
+  catch(error){clearAuthentication("Please sign in to access your demo workspace.");}
+})();
