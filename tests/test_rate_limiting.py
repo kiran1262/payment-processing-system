@@ -512,15 +512,19 @@ def test_vercel_middleware_fails_closed_for_missing_or_malformed_client_ip(clien
     assert "Client network identity unavailable" in response.text
 
 
-def test_supabase_transaction_pooler_uses_null_pool():
-    from sqlalchemy.pool import NullPool
+def test_supabase_transaction_pooler_uses_one_reusable_connection():
+    from sqlalchemy.pool import QueuePool
     from app.database import create_application_engine
 
     engine = create_application_engine(
         "postgresql+psycopg://demo:password@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
     )
     try:
-        assert isinstance(engine.pool, NullPool)
+        assert isinstance(engine.pool, QueuePool)
+        assert engine.pool.size() == 1
+        assert engine.pool._max_overflow == 0
+        assert engine.pool._recycle == 300
+        assert engine.pool._pre_ping is True
     finally:
         engine.dispose()
 
