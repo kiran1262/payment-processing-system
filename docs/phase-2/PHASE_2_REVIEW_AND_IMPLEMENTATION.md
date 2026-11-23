@@ -181,7 +181,7 @@ These are conservative demo defaults, not universal production recommendations. 
 - Window boundaries use application-process clocks. Multi-instance deployments must maintain clock synchronization; clock skew can cause inconsistent window assignment.
 - The shared limiter currently uses the primary database. This creates database contention and means limiter availability is coupled to database availability.
 - Expired-bucket cleanup is exposed as a function but no scheduler/maintenance command is wired yet; production operations must schedule it.
-- `RATE_LIMIT_HASH_SECRET` must be set to a high-entropy secret in production; the built-in fallback is development-only. Rotating it resets the effective rate-limit key namespace. Policies can be tuned with `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS` environment variables.
+- `RATE_LIMIT_HASH_SECRET` must be set to a high-entropy secret in production; application startup fails in `APP_ENV=production` if it is missing. The built-in fallback is development-only. Rotating it resets the effective rate-limit key namespace. Policies can be tuned with `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS` environment variables.
 - Client IP uses the direct ASGI socket peer. Forwarded headers are intentionally ignored; deployments behind a reverse proxy need explicit trusted-proxy configuration at the edge.
 - Login is throttled by IP, not by account/email. Distributed password spraying across many IPs remains a residual risk; account-scoped throttling must be designed carefully to avoid attacker-induced account lockout.
 - Webhook ingress does not exist and remains a Phase 5 concern.
