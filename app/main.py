@@ -19,12 +19,28 @@ from .database import get_db
 from .models import AuthSession, Payment, Tenant, User
 from .schemas import LoginRequest, MemberCreate, PaymentCreate, RegisterRequest
 from .services import IdempotencyConflictError, create_payment, dashboard_stats, refund_payment
-from .rate_limit import rate_limit_ip, rate_limit_user
+from .rate_limit import enforce_rate_limit, rate_limit_ip, rate_limit_user
+from .proxy import resolve_forwarded_client_ip
+from .config import TRUSTED_PROXY_NETWORKS
 
 logger = logging.getLogger(__name__)
 BASE = Path(__file__).resolve().parent.parent
 app = FastAPI(title="Payment Processing System", version="1.2.0")
 app.mount("/static", StaticFiles(directory=BASE / "frontend"), name="static")
+
+
+@app.middleware("http")
+async def trusted_proxy_middleware(request, call_next):
+    """Honor X-Forwarded-For only when the immediate peer is explicitly trusted."""
+    peer = request.client
+    if peer is not None and TRUSTED_PROXY_NETWORKS:
+        forwarded_for = request.headers.get("x-forwarded-for")
+        resolved = resolve_forwarded_client_ip(
+            peer.host, forwarded_for, TRUSTED_PROXY_NETWORKS
+        )
+        if resolved != peer.host:
+            request.scope["client"] = (resolved, peer.port)
+    return await call_next(request)
 
 
 @app.get("/", include_in_schema=False)
