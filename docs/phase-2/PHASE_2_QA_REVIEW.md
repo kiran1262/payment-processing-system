@@ -196,20 +196,20 @@ The selected hosting target is Vercel with Supabase PostgreSQL. The branch now i
 - A separate `MIGRATION_DATABASE_URL` for direct/session database migrations.
 - A Supabase pg_cron SQL script for bounded expiry cleanup every ten minutes.
 
-New regression tests cover Vercel client-IP parsing, distinct forwarded client IP buckets, fail-closed malformed client IPs, and Supabase transaction-pooler engine selection. These code changes require a fresh CI run before they can be considered verified.
+New regression tests cover Vercel client-IP parsing, distinct forwarded client IP buckets, fail-closed malformed client IPs, and Supabase transaction-pooler engine selection. The final Vercel/Supabase regression run is recorded in section 9.
 
 Operator setup is still pending: create the actual Supabase/Vercel projects, apply migrations, configure secrets, run the pg_cron script, and verify Preview deployment and browser E2E behavior. No live deployment or database configuration has been performed.
 
 
 ## 9. Vercel/Supabase regression verification
 
-CI run [45131302189](https://github.com/kiran1262/payment-processing-system/actions/runs/45131302189) on commit `aed28acf80445130cd25d8c5ca2b4ead52d91ed3` passed:
+Final CI run [45131666733](https://github.com/kiran1262/payment-processing-system/actions/runs/45131666733) on commit `f146f79f0a629fe8f7515d5cd9de51874346f743` passed:
 - **67 pytest tests passed, 1 warning**.
 - Vercel client-IP parsing, per-IP isolation, and malformed-header fail-closed tests passed.
 - Supabase transaction-pooler one-connection pool selection passed.
 - Root Vercel FastAPI entrypoint and frontend bundle configuration tests passed.
 - PostgreSQL 16 multi-process limiter test and benchmark passed.
-- Benchmark: 562.3 req/s, median 8.5 ms, p95 44.3 ms, max 52.8 ms (100 requests, 8 workers).
+- Benchmark: 637.1 req/s, median 8.0 ms, p95 40.7 ms, max 50.7 ms (100 requests, 8 workers).
 - Frontend JavaScript syntax check passed.
 
 The warning remains the existing Starlette/httpx TestClient deprecation warning. The run verifies the code changes; it does not verify a live Vercel or Supabase project.
