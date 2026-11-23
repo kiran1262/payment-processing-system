@@ -527,7 +527,7 @@ def test_supabase_transaction_pooler_uses_null_pool():
 
 def test_vercel_entrypoint_exports_the_existing_fastapi_app():
     from fastapi import FastAPI
-    from api.index import app
+    from main import app
 
     assert isinstance(app, FastAPI)
 
