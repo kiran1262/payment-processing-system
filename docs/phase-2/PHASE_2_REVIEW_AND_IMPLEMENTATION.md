@@ -260,6 +260,7 @@ Deployment-specific changes added on the Phase 2 branch:
 ### Operator-owned setup still required
 
 - [ ] Create the Supabase project and choose the database region.
+- [ ] Disable the Supabase Data API because the app uses direct PostgreSQL only; if it remains enabled, verify no `anon`/`authenticated` grants and appropriate RLS on application tables.
 - [ ] Apply Alembic migrations using `MIGRATION_DATABASE_URL`.
 - [ ] Configure Vercel `APP_ENV`, transaction-pooler `DATABASE_URL`, and unique high-entropy `RATE_LIMIT_HASH_SECRET`.
 - [ ] Import the repository into Vercel and verify Preview deployment, frontend assets, API health/readiness, and docs.
@@ -267,3 +268,16 @@ Deployment-specific changes added on the Phase 2 branch:
 - [ ] Complete browser E2E, cross-instance rate-limit, latency, connection-use, monitoring, backup/restore, and rollback checks.
 
 No Supabase project, Vercel project, production credentials, migration, cron job, or live deployment has been created/configured by these repository changes. PR #5 remains draft/open and must not be merged without explicit approval.
+
+
+### Latest Vercel/Supabase preparation CI evidence
+
+The Vercel/Supabase code and regression tests passed on PR branch commit `aed28acf80445130cd25d8c5ca2b4ead52d91ed3` (workflow run [45131302189](https://github.com/kiran1262/payment-processing-system/actions/runs/45131302189)):
+- **67 pytest tests passed, 1 warning**.
+- Vercel client-IP parsing and middleware tests passed, including fail-closed malformed-header behavior.
+- Supabase transaction-pooler engine selection and root FastAPI entrypoint tests passed.
+- PostgreSQL 16 multi-process limiter test and contention smoke benchmark passed.
+- Benchmark: 100 requests / 8 workers; 562.3 req/s, median 8.5 ms, p95 44.3 ms, max 52.8 ms on a GitHub-hosted runner.
+- `node --check frontend/app.js` passed.
+
+The benchmark is a CI smoke sample, not a production capacity guarantee. A later documentation-only change adds the Supabase Data API security instruction; the current branch's final CI run must also be green before this branch is considered fully verified.
