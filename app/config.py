@@ -16,3 +16,18 @@ _configured_rate_limit_secret = os.environ.get("RATE_LIMIT_HASH_SECRET", "").str
 if APP_ENV == "production" and not _configured_rate_limit_secret:
     raise RuntimeError("RATE_LIMIT_HASH_SECRET must be configured in production.")
 RATE_LIMIT_HASH_SECRET = _configured_rate_limit_secret or "local-development-only-change-me"
+
+
+# Comma-separated trusted reverse-proxy IP addresses or CIDR networks.
+# Empty by default: forwarded headers are ignored unless explicitly configured.
+import ipaddress
+
+_trusted_proxy_value = os.environ.get("TRUSTED_PROXY_IPS", "").strip()
+try:
+    TRUSTED_PROXY_NETWORKS = tuple(
+        ipaddress.ip_network(value.strip(), strict=False)
+        for value in _trusted_proxy_value.split(",")
+        if value.strip()
+    )
+except ValueError as exc:
+    raise RuntimeError("TRUSTED_PROXY_IPS must contain valid IP addresses or CIDR networks") from exc
