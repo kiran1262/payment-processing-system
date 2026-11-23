@@ -5,7 +5,7 @@
 > **PR:** [#5 — Phase 2: API rate limiting and abuse controls](https://github.com/kiran1262/payment-processing-system/pull/5)  
 > **Reviewed branch head:** `647c222980bcef8c1d899cacfc2ec8992e415880`  
 > **Review date:** 2026-11-23  
-> **Disposition:** **Do not mark Phase 2 complete yet.** No code was changed as part of this QA-only pass; findings below require triage and fixes/tests.
+> **Disposition:** Initial findings have been addressed in a follow-up implementation batch. See the remediation status table below; do not mark Phase 2 complete until latest-head CI and deployment checks pass.
 
 ---
 
@@ -297,3 +297,24 @@ Do not weaken these behaviors while addressing the findings.
 The highest-priority code issue is the stale-window race in `consume_rate_limit`. The next priority is configuration validation. The concurrency/PostgreSQL acceptance gap must be closed or formally retained as a mandatory later gate with no production-readiness claim.
 
 This review does not change application code. Findings are recorded for the next implementation pass.
+
+## 7. Follow-up remediation status
+
+| Finding | Remediation | Verification |
+|---|---|---|
+| P2-QA-01 stale-window race | Upsert keeps the stored window monotonic; stale requests are counted conservatively in the newest bucket. | Deterministic stale-window regression test. |
+| P2-QA-02 invalid policy config | Action limits/windows are validated during module startup, including positive bounds and parse errors. | Subprocess tests for zero, negative, and non-integer values. |
+| P2-QA-03 missing peer identity | Missing ASGI client identity returns generic 503 rather than a shared unknown bucket. | Dependency-level regression test. |
+| P2-QA-04 distributed password spraying | Login uses a 60/15m IP budget and 10/15m HMAC account bucket; generic responses and no raw email persistence. | Login account-budget and HMAC-digest tests. |
+| P2-QA-05 concurrency/PostgreSQL | Added file-backed SQLite concurrent increment test and PostgreSQL 16 multi-process integration test in CI. | Must pass latest PR CI. |
+| P2-QA-06 cleanup | Added bounded batch deletion and a maintenance command. | Batch cleanup regression; scheduler remains operator-configured. |
+| P2-QA-07 documentation | Master record and README updated with policies, proxy, cleanup, benchmark, and boundary semantics. | Documentation review. |
+
+### Operational completion notes
+
+- Cleanup: schedule the maintenance command every 5–15 minutes using the deployment scheduler.
+- Trusted proxy: set TRUSTED_PROXY_IPS to exact proxy addresses/CIDRs, ensure the proxy sanitizes/appends X-Forwarded-For, and run Uvicorn with --no-proxy-headers. Never trust all addresses.
+- Database contention: run python -m scripts.benchmark_rate_limit --workers 20 --requests 500 against a staging database using the same DB engine and worker topology. Compare p50/p95 with the API latency budget; use a dedicated limiter if primary DB write contention is material.
+- Fixed-window boundary burst: a limit of N can allow up to roughly 2N in a short interval spanning a boundary. This is tested and documented; strict burst smoothing requires token bucket/sliding window at a trusted gateway or a dedicated limiter.
+- Password spraying: account-level HMAC throttling constrains distributed attempts but creates a bounded temporary lockout/denial-of-service trade-off. Generic responses reduce account enumeration. This is not a substitute for MFA, breached-password detection, bot controls, or anomaly monitoring.
+- PostgreSQL multi-worker: CI starts PostgreSQL 16 and launches four independent Python processes against one shared bucket; exactly the configured number of requests must be allowed while all increments are retained.
