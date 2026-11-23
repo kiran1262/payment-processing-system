@@ -184,3 +184,23 @@ def test_rate_limit_policy_can_be_configured_from_environment(monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_REFUND_LIMIT", "2")
     monkeypatch.setenv("RATE_LIMIT_REFUND_WINDOW_SECONDS", "120")
     assert _policy("refund", 5, 60) == (2, 120)
+
+
+
+def test_production_environment_requires_rate_limit_secret():
+    import os
+    import subprocess
+    import sys
+
+    environment = os.environ.copy()
+    environment["APP_ENV"] = "production"
+    environment.pop("RATE_LIMIT_HASH_SECRET", None)
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.config"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "RATE_LIMIT_HASH_SECRET must be configured in production" in result.stderr
