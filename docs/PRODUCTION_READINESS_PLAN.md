@@ -12,7 +12,7 @@ This application is currently an educational payment simulation. Do not expose i
 | Phase | Status | Evidence / remaining gate |
 |---|---|---|
 | 0. Alembic migration foundation | **Implemented** | PR #3 is merged. Alembic owns schema changes; startup does not call `create_all`. Migration tests cover fresh upgrade, existing-row preservation, and metadata drift. |
-| 1. Authentication, authorization, tenant isolation | **Implemented in PR #4; final review in progress** | Registration/login/logout, 12-hour revocable bearer sessions, owner/member roles, tenant-scoped payment operations and idempotency, migration 0002, and regression tests are present. Final review also covers SQLite FK enforcement, legacy workspace owner bootstrap, role-aware frontend controls, dynamic profile identity, and browser E2E coverage. |
+| 1. Authentication, authorization, tenant isolation | **Implemented in PR #4; final review in progress** | Registration/login/logout, 12-hour revocable bearer sessions, owner/member roles, tenant-scoped payment operations and idempotency, migration 0002, and regression tests are present. SQLite FK enforcement, local legacy-owner bootstrap, owner-aware refund controls, and dynamic profile identity are now implemented and covered by regression tests. Browser E2E coverage remains outstanding. |
 | 2. Rate limiting and abuse controls | **Not started** | Shared-store limits for auth, payment, refund, reads, and webhook ingress. |
 | 3. Audit logging | **Not started** | Append-only, transactionally consistent business audit events. |
 | 4. Ledger and reconciliation | **Not started** | Immutable balanced double-entry postings and provider reconciliation. |
