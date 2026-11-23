@@ -99,7 +99,7 @@ Useful commands (Windows PowerShell):
     .\.venv\Scripts\python.exe -m alembic upgrade head
     .\.venv\Scripts\python.exe -m alembic check
 
-The application and Alembic both read DATABASE_URL. SQLite is the local default. The SQLAlchemy engine only applies SQLite-specific connection options to SQLite URLs. Rate-limit identity keys use HMAC-SHA256; set `RATE_LIMIT_HASH_SECRET` to a high-entropy secret through the deployment secret manager outside local development. Set TRUSTED_PROXY_IPS to comma-separated exact proxy IPs or CIDR ranges. Startup fails when `APP_ENV=production` and the secret is missing. The built-in fallback is development-only. Tune action policies with `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS` (actions: `REGISTER`, `LOGIN`, `LOGIN_ACCOUNT`, `MEMBER_CREATE`, `PAYMENT_CREATE`, `REFUND`, `READ`).
+The application and Alembic both read DATABASE_URL. SQLite is the local default. The SQLAlchemy engine only applies SQLite-specific connection options to SQLite URLs. Rate-limit identity keys use HMAC-SHA256; set `RATE_LIMIT_HASH_SECRET` to a high-entropy secret through the deployment secret manager outside local development. Set TRUSTED_PROXY_IPS to comma-separated exact proxy IPs or CIDR ranges. Startup fails when `APP_ENV=production` and the secret is missing. The built-in fallback is development-only. Tune action policies with `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS` (actions: `REGISTER`, `LOGIN`, `LOGIN_NETWORK`, `LOGIN_ACCOUNT`, `MEMBER_CREATE`, `PAYMENT_CREATE`, `REFUND`, `READ`).
 
 ## Run tests
 
@@ -115,12 +115,13 @@ The migration tests cover a fresh database upgrade, schema drift against ORM met
 
 ## API rate limits
 
-Phase 2 uses atomic, database-backed fixed-window counters shared by application workers that use the same database. Registration uses the resolved client IP. Login uses a generous IP budget plus a per-account budget keyed by an HMAC of the normalized email. Authenticated limits use verified tenant and user IDs.
+Phase 2 uses atomic, database-backed fixed-window counters shared by application workers that use the same database. Registration uses the resolved client IP. Login uses IP, IPv4 /24 or IPv6 /64 network-prefix, and per-account budgets; account and network identities are HMAC-keyed before persistence. Authenticated limits use verified tenant and user IDs.
 
 | Action | Default limit | Window | Scope |
 |---|---:|---:|---|
 | Registration | 5 | 1 hour | IP |
 | Login IP | 60 | 15 minutes | IP |
+| Login network | 100 | 15 minutes | IPv4 /24 or IPv6 /64 prefix (HMAC) |
 | Login account | 10 | 15 minutes | HMAC of normalized email |
 | Member creation | 10 | 1 hour | User + tenant |
 | Payment creation | 20 | 1 minute | User + tenant |
