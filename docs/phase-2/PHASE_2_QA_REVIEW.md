@@ -185,3 +185,17 @@ These tasks are not missing application code, but they are required before deplo
 - Webhook ingress is not implemented and remains Phase 5 work.
 
 **QA decision:** The seven original Phase 2 findings have been remediated or explicitly converted into deployment-owned actions/residual risks. The automated Phase 2 acceptance evidence is green. PR #5 should remain draft until the final diff review and deployment-specific tasks are complete. This report does not grant production-readiness approval, and PR #5 must not be merged without explicit user approval.
+
+
+## 8. Vercel + Supabase deployment review
+
+The selected hosting target is Vercel with Supabase PostgreSQL. The branch now includes:
+- A Vercel FastAPI entrypoint and explicit inclusion of the frontend assets in the function bundle.
+- Supabase transaction-pooler detection with SQLAlchemy `NullPool`, TLS required, and Psycopg automatic prepared statements disabled.
+- Vercel platform client-IP parsing; malformed/missing values fail closed instead of using a shared runtime IP.
+- A separate `MIGRATION_DATABASE_URL` for direct/session database migrations.
+- A Supabase pg_cron SQL script for bounded expiry cleanup every ten minutes.
+
+New regression tests cover Vercel client-IP parsing, distinct forwarded client IP buckets, fail-closed malformed client IPs, and Supabase transaction-pooler engine selection. These code changes require a fresh CI run before they can be considered verified.
+
+Operator setup is still pending: create the actual Supabase/Vercel projects, apply migrations, configure secrets, run the pg_cron script, and verify Preview deployment and browser E2E behavior. No live deployment or database configuration has been performed.
