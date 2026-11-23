@@ -29,7 +29,15 @@ Run migrations as a release/setup step, not during a Vercel request and not at a
 
 Prefer the Supabase **direct connection** URL for migrations. Direct connections may require IPv6 from the machine running Alembic. If that machine cannot reach the direct endpoint, use the Supabase **session pooler** connection for the migration command.
 
-Set `MIGRATION_DATABASE_URL` to a SQLAlchemy Psycopg URL and run:
+Use the SQLAlchemy Psycopg driver prefix and require TLS for the migration URL too. For example, a direct endpoint has this shape:
+
+```text
+postgresql+psycopg://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres?sslmode=require
+```
+
+For the session pooler, copy the session-mode host/user from Supabase Connect and use its port (normally 5432), with the same `postgresql+psycopg://` prefix and `?sslmode=require`.
+
+Set `MIGRATION_DATABASE_URL` to that URL and run:
 
 ```bash
 python -m pip install -r requirements.txt
