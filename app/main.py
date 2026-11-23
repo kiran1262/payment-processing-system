@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from hashlib import sha256
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +19,7 @@ from .database import get_db
 from .models import AuthSession, Payment, Tenant, User
 from .schemas import LoginRequest, MemberCreate, PaymentCreate, RegisterRequest
 from .services import IdempotencyConflictError, create_payment, dashboard_stats, refund_payment
-from .rate_limit import enforce_rate_limit, rate_limit_ip, rate_limit_user
+from .rate_limit import enforce_rate_limit, login_network_identity, rate_limit_ip, rate_limit_user
 from .proxy import resolve_forwarded_client_ip
 from .config import TRUSTED_PROXY_NETWORKS
 
@@ -87,10 +87,13 @@ def register(
 @app.post("/api/auth/login")
 def login(
     payload: LoginRequest,
+    request: Request,
     db: Session = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_ip("login")),
 ):
     normalized_email = str(payload.email).strip().lower()
+    peer_host = request.client.host if request.client is not None else ""
+    enforce_rate_limit(db, "login_network", login_network_identity(peer_host))
     enforce_rate_limit(db, "login_account", f"email:{normalized_email}")
     user = db.scalar(select(User).where(User.email == normalized_email))
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
