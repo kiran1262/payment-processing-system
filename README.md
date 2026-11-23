@@ -15,7 +15,10 @@ The application is intended for local learning. It now includes basic applicatio
 - Transaction history and SQL-aggregated dashboard metrics
 - Payment detail endpoint and simulated refunds
 - Registration, login, logout, expiring bearer sessions, and PBKDF2 password hashing
+- Authenticated profile endpoint; workspace/user/role labels are populated from the signed-in profile
 - Owner/member roles with owner-only refunds and tenant membership management
+- One-time local admin bootstrap command for the migration-created legacy workspace
+- SQLite foreign-key enforcement on every application connection
 - Tenant-isolated payment lists, details, refunds, dashboards, and idempotency keys
 - Idempotency-Key support with request-payload conflict detection and safe browser retries
 - Exact decimal-to-paise conversion and email validation
@@ -113,12 +116,18 @@ The migration tests cover a fresh database upgrade, schema drift against ORM met
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | /api/health | Health check |
-| GET | /api/dashboard | Dashboard metrics |
-| GET | /api/payments | List recent payments |
-| POST | /api/payments | Create a simulated payment |
-| GET | /api/payments/{payment_id} | Retrieve a payment |
-| POST | /api/payments/{payment_id}/refund | Refund a successful demo payment |
+| GET | /api/health | Public liveness probe |
+| GET | /api/ready | Public database readiness probe |
+| POST | /api/auth/register | Publicly create a new tenant and its first owner |
+| POST | /api/auth/login | Public login; returns a bearer token |
+| GET | /api/auth/me | Authenticated user and workspace profile |
+| POST | /api/auth/logout | Authenticated session revocation |
+| POST | /api/tenant/members | Owner-only member creation |
+| GET | /api/dashboard | Authenticated, tenant-scoped dashboard metrics |
+| GET | /api/payments | Authenticated, tenant-scoped payment list |
+| POST | /api/payments | Authenticated, tenant-scoped simulated payment creation |
+| GET | /api/payments/{payment_id} | Authenticated payment detail; cross-tenant records return 404 |
+| POST | /api/payments/{payment_id}/refund | Owner-only refund of a successful demo payment |
 
 ### Create payment example
 
@@ -146,14 +155,31 @@ For learning purposes only, amounts ending in .99 are declined. For example, 99.
 - **Revenue** sums only payments still in the succeeded state; refunded payments are excluded.
 - **Success rate** counts succeeded plus refunded payments as successful payment outcomes, divided by all transactions.
 
+## Recover access to pre-Phase-1 demo payments
+
+Migration `0002_tenants_auth` preserves old demo payments in the `Legacy demo workspace`. It intentionally does not invent an owner identity or password. To access those records, an administrator with trusted local access to the migrated database must run the one-time bootstrap command. This command is not an HTTP endpoint and refuses to run if the legacy workspace already has a user.
+
+PowerShell example (run from the repository root after migration):
+
+    $env:LEGACY_OWNER_NAME = "Legacy Workspace Owner"
+    $env:LEGACY_OWNER_EMAIL = "legacy-owner@example.com"
+    $env:LEGACY_OWNER_PASSWORD = "use-a-unique-password-of-at-least-12-characters"
+    .\.venv\Scripts\python.exe -m app.bootstrap_legacy_owner
+    Remove-Item Env:LEGACY_OWNER_NAME, Env:LEGACY_OWNER_EMAIL, Env:LEGACY_OWNER_PASSWORD
+
+Use a unique password, do not commit it, and run this only on a trusted machine against the intended `DATABASE_URL`.
+
 ## Production engineering still required
 
 Before any real payment integration or public deployment:
 
+- Add shared-store API rate limiting and abuse controls.
+- Add durable, append-only audit logging for sensitive business actions.
+- Implement a balanced double-entry ledger and reconciliation.
 - Integrate an authorized payment service provider using its official SDK and sandbox.
-- Add server-side authentication, authorization, tenant isolation, and API rate limiting.
 - Verify signed provider webhooks and make webhook processing idempotent.
-- Implement a proper double-entry ledger, reconciliation, audit logs, and monitoring.
+- Add PostgreSQL concurrency and failure-injection tests.
+- Add monitoring/alerting, backups and restore drills, TLS, secrets management, deployment/rollback controls, and independent security review.
 - Add secrets management, TLS, secure deployment configuration, and security review.
 - Never store raw card data or CVV; follow the provider's current compliance requirements.
 
@@ -166,12 +192,14 @@ Do not make the demo publicly accessible until the above controls are implemente
     │   ├── env.py
     │   ├── script.py.mako
     │   └── versions/
-    │       └── 0001_initial_schema.py
+    │       ├── 0001_initial_schema.py
+    │       └── 0002_tenants_auth_and_scoped_idempotency.py
     ├── app/
     │   ├── __init__.py
     │   ├── config.py
     │   ├── database.py
     │   ├── main.py
+    │   ├── bootstrap_legacy_owner.py
     │   ├── models.py
     │   ├── schemas.py
     │   └── services.py
@@ -181,6 +209,7 @@ Do not make the demo publicly accessible until the above controls are implemente
     │   └── app.js
     ├── tests/
     │   ├── conftest.py
+    │   ├── test_auth_tenants.py
     │   ├── test_migrations.py
     │   └── test_payments.py
     ├── alembic.ini
