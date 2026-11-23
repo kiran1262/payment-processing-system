@@ -20,7 +20,7 @@ Keep the Vercel Function region close to the Supabase project region where your 
 5. URL-encode special characters in the database password before placing it in the URL.
 6. **Disable the Supabase Data API** for this project because the application uses direct PostgreSQL connections and does not use Supabase REST, GraphQL, or client libraries. This prevents the app's tables from being reachable through an unused API surface. If you intentionally keep the Data API enabled, verify that application tables have no `anon`/`authenticated` grants and have appropriate RLS protection; do not expose the tables to the browser.
 
-The application engine detects Supabase's shared transaction pooler (port 6543), uses SQLAlchemy `NullPool`, requires TLS, and disables Psycopg automatic prepared statements. These settings are specific to the shared transaction pooler.
+The application engine detects Supabase's shared transaction pooler (port 6543), uses a one-connection SQLAlchemy pool (`pool_size=1`, `max_overflow=0`, `pool_pre_ping=True`, and a five-minute recycle), requires TLS, and disables Psycopg automatic prepared statements. These settings are specific to the shared transaction pooler.
 
 Do not use the Supabase service-role key or an anon key as `DATABASE_URL`. The application connects directly to PostgreSQL with the database username/password.
 
@@ -114,7 +114,7 @@ The job deletes at most 1,000 expired rows per run. It rechecks expiry during de
 ## 7. Operational notes and limitations
 
 - Vercel deployment does not automatically apply Alembic migrations. Keep schema changes as an explicit release step.
-- Supabase's transaction pooler is intended for serverless short-lived connections. The application uses `NullPool`; do not add a large per-instance SQLAlchemy pool without measuring connection use.
+- Supabase's transaction pooler is intended for serverless short-lived connections. The application keeps one reusable client connection per warm instance; do not add a large per-instance SQLAlchemy pool without measuring connection use.
 - Transaction pooling does not preserve session state between transactions. The application must not rely on session-level settings, advisory locks, or temporary tables across requests.
 - Rate-limit increments are committed independently from payment business transactions. A failed payment request can still consume its rate-limit budget.
 - Supabase is now both the business database and rate-limit store. A database outage causes protected requests to fail closed.
