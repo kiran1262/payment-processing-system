@@ -1,15 +1,39 @@
-import pytest\nfrom sqlalchemy import create_engine, func, select
+import ipaddress
+import os
+import subprocess
+import sys
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+from fastapi import HTTPException, Request
+from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base, enable_sqlite_foreign_keys
 from app.models import RateLimitBucket
-from app.rate_limit import POLICIES, consume_rate_limit, purge_expired_rate_limit_buckets\nfrom app.proxy import resolve_forwarded_client_ip\nimport ipaddress
+from app.proxy import resolve_forwarded_client_ip
+from app.rate_limit import (
+    POLICIES,
+    _bucket_digest,
+    consume_rate_limit,
+    purge_expired_rate_limit_buckets,
+    rate_limit_ip,
+)
+
+
+def _sqlite_engine(url="sqlite://"):
+    engine = create_engine(
+        url,
+        connect_args={"timeout": 30, "check_same_thread": False} if url.startswith("sqlite:///") else {},
+    )
+    return enable_sqlite_foreign_keys(engine)
 
 
 def test_fixed_window_limit_and_reset_are_deterministic(monkeypatch):
     monkeypatch.setitem(POLICIES, "unit_test", (2, 60))
-    engine = enable_sqlite_foreign_keys(create_engine("sqlite://"))
+    engine = _sqlite_engine()
     Base.metadata.create_all(engine)
     try:
         with Session(engine) as db:
@@ -23,7 +47,7 @@ def test_fixed_window_limit_and_reset_are_deterministic(monkeypatch):
 
 
 def test_rate_limit_buckets_are_hashed_and_expired_buckets_can_be_cleaned():
-    engine = enable_sqlite_foreign_keys(create_engine("sqlite://"))
+    engine = _sqlite_engine()
     Base.metadata.create_all(engine)
     try:
         with Session(engine) as db:
@@ -42,7 +66,11 @@ def test_login_is_throttled_by_socket_ip_and_returns_retry_after(client, monkeyp
     monkeypatch.setitem(POLICIES, "login", (1, 900))
     credentials = {"email": "owner@example.com", "password": "correct-horse-battery"}
     first = client.post("/api/auth/login", json=credentials, headers={"X-Forwarded-For": "198.51.100.1"})
-    second = client.post("/api/auth/login", json={**credentials, "email": "not-the-same-account@example.com"}, headers={"X-Forwarded-For": "203.0.113.99"})
+    second = client.post(
+        "/api/auth/login",
+        json={**credentials, "email": "not-the-same-account@example.com"},
+        headers={"X-Forwarded-For": "203.0.113.99"},
+    )
     assert first.status_code == 200
     assert second.status_code == 429
     assert int(second.headers["Retry-After"]) > 0
@@ -63,8 +91,7 @@ def test_payment_creation_limit_does_not_create_extra_payment(client, monkeypatc
     second = client.post("/api/payments", json=payload, headers={"Idempotency-Key": "rate-limit-key"})
     assert first.status_code == 201
     assert second.status_code == 429
-    stats = client.get("/api/dashboard").json()
-    assert stats["total_transactions"] == 1
+    assert client.get("/api/dashboard").json()["total_transactions"] == 1
 
 
 def test_rate_limits_are_isolated_between_authenticated_users(client, monkeypatch):
@@ -77,9 +104,7 @@ def test_rate_limits_are_isolated_between_authenticated_users(client, monkeypatc
         "method": "UPI",
         "description": "Tenant bucket isolation",
     }
-    first = client.post("/api/payments", json=payload)
-    assert first.status_code == 201
-
+    assert client.post("/api/payments", json=payload).status_code == 201
     registration = client.post("/api/auth/register", json={
         "tenant_name": "Second Store",
         "full_name": "Second Owner",
@@ -88,8 +113,7 @@ def test_rate_limits_are_isolated_between_authenticated_users(client, monkeypatc
     })
     assert registration.status_code == 201
     client.headers["Authorization"] = f"Bearer {registration.json()['access_token']}"
-    second = client.post("/api/payments", json=payload)
-    assert second.status_code == 201
+    assert client.post("/api/payments", json=payload).status_code == 201
 
 
 def test_read_endpoints_have_a_separate_budget(client, monkeypatch):
@@ -111,7 +135,6 @@ def test_rate_limit_storage_failure_fails_closed_on_login(client, monkeypatch):
     assert response.status_code == 503
     assert response.headers["Retry-After"] == "5"
     assert "private database details" not in response.text
-
 
 
 def test_registration_limit_blocks_tenant_creation(client, monkeypatch):
@@ -156,7 +179,6 @@ def test_refund_and_member_creation_have_separate_limits(client, monkeypatch):
     assert blocked_member.status_code == 429
 
 
-
 def test_failed_login_attempts_consume_the_ip_budget(client, monkeypatch):
     monkeypatch.setitem(POLICIES, "login", (1, 900))
     failed = client.post("/api/auth/login", json={
@@ -169,13 +191,30 @@ def test_failed_login_attempts_consume_the_ip_budget(client, monkeypatch):
     assert blocked.status_code == 429
 
 
+def test_login_account_budget_blocks_repeated_attempts_for_same_email(client, monkeypatch):
+    monkeypatch.setitem(POLICIES, "login", (60, 900))
+    monkeypatch.setitem(POLICIES, "login_account", (1, 900))
+    credentials = {"email": "owner@example.com", "password": "wrong-password"}
+    first = client.post("/api/auth/login", json=credentials)
+    second = client.post("/api/auth/login", json=credentials)
+    assert first.status_code == 401
+    assert second.status_code == 429
+    assert second.json()["detail"] == "Too many requests. Please try again later."
+
+
+def test_account_bucket_digest_does_not_contain_email():
+    digest = _bucket_digest("login_account", "email:owner@example.com")
+    assert "owner" not in digest
+    assert "example.com" not in digest
+    assert len(digest) == 64
+
+
 def test_frontend_displays_retry_after_for_rate_limit_responses():
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text()
     assert 'response.headers.get("Retry-After")' in source
     assert "Please retry in" in source
-
 
 
 def test_rate_limit_policy_can_be_configured_from_environment(monkeypatch):
@@ -186,12 +225,7 @@ def test_rate_limit_policy_can_be_configured_from_environment(monkeypatch):
     assert _policy("refund", 5, 60) == (2, 120)
 
 
-
 def test_production_environment_requires_rate_limit_secret():
-    import os
-    import subprocess
-    import sys
-
     environment = os.environ.copy()
     environment["APP_ENV"] = "production"
     environment.pop("RATE_LIMIT_HASH_SECRET", None)
@@ -206,98 +240,7 @@ def test_production_environment_requires_rate_limit_secret():
     assert "RATE_LIMIT_HASH_SECRET must be configured in production" in result.stderr
 
 
-
-def test_stale_request_cannot_move_window_backwards_or_reset_new_window():
-    engine = enable_sqlite_foreign_keys(create_engine("sqlite://"))
-    Base.metadata.create_all(engine)
-    try:
-        with Session(engine) as db:
-            first = consume_rate_limit(db, "login", "stale-window", now=180)
-            stale = consume_rate_limit(db, "login", "stale-window", now=120)
-            bucket = db.scalar(select(RateLimitBucket))
-            assert first == (True, 60)
-            assert stale == (True, 60)
-            assert bucket.window_start == 180
-            assert bucket.request_count == 2
-            assert bucket.expires_at == 1980
-    finally:
-        Base.metadata.drop_all(engine)
-        engine.dispose()
-
-
-def test_missing_socket_peer_fails_closed_without_shared_unknown_bucket():
-    from fastapi import HTTPException, Request
-    from app.rate_limit import rate_limit_ip
-
-    request = Request({"type": "http", "method": "POST", "path": "/", "headers": [], "client": None})
-    dependency = rate_limit_ip("login")
-    with pytest.raises(HTTPException) as exc:
-        dependency(request, None)
-    assert exc.value.status_code == 503
-    assert "unknown" not in str(exc.value.detail).lower()
-
-
-def test_trusted_proxy_resolution_only_uses_explicitly_trusted_hops():
-    trusted = (ipaddress.ip_network("10.0.0.0/8"),)
-    assert resolve_forwarded_client_ip("10.0.0.2", "198.51.100.9, 10.0.0.3", trusted) == "198.51.100.9"
-    assert resolve_forwarded_client_ip("203.0.113.8", "198.51.100.9", trusted) == "203.0.113.8"
-    assert resolve_forwarded_client_ip("10.0.0.2", "not-an-ip", trusted) == "10.0.0.2"
-    assert resolve_forwarded_client_ip("10.0.0.2", "10.0.0.3", trusted) == "10.0.0.2"
-
-
-def test_login_account_budget_blocks_distributed_attempts_without_email_storage(client, monkeypatch):
-    from sqlalchemy import select
-    from app.models import RateLimitBucket
-    monkeypatch.setitem(POLICIES, "login_account", (1, 900))
-    credentials = {"email": "owner@example.com", "password": "wrong-password"}
-    first = client.post("/api/auth/login", json=credentials)
-    second = client.post("/api/auth/login", json=credentials)
-    assert first.status_code == 401
-    assert second.status_code == 429
-    with client.app.state._unused if False else __import__("contextlib").nullcontext():
-        pass
-
-
-def test_fixed_window_boundary_burst_is_explicitly_bounded():
-    monkeypatch = __import__("pytest").MonkeyPatch()
-    monkeypatch.setitem(POLICIES, "unit_boundary", (2, 60))
-    engine = enable_sqlite_foreign_keys(create_engine("sqlite://"))
-    Base.metadata.create_all(engine)
-    try:
-        with Session(engine) as db:
-            assert consume_rate_limit(db, "unit_boundary", "boundary", now=179) == (True, 1)
-            assert consume_rate_limit(db, "unit_boundary", "boundary", now=179) == (True, 1)
-            assert consume_rate_limit(db, "unit_boundary", "boundary", now=180) == (True, 60)
-            assert consume_rate_limit(db, "unit_boundary", "boundary", now=180) == (True, 60)
-            assert consume_rate_limit(db, "unit_boundary", "boundary", now=180) == (False, 60)
-    finally:
-        Base.metadata.drop_all(engine)
-        engine.dispose()
-        monkeypatch.undo()
-
-
-def test_expired_bucket_cleanup_is_batched_and_preserves_live_rows():
-    engine = enable_sqlite_foreign_keys(create_engine("sqlite://"))
-    Base.metadata.create_all(engine)
-    try:
-        with Session(engine) as db:
-            for index in range(7):
-                consume_rate_limit(db, "login", f"cleanup-{index}", now=1000)
-            live_key = consume_rate_limit(db, "read", "still-live", now=1000)
-            live_bucket = db.scalar(select(RateLimitBucket).where(RateLimitBucket.expires_at > 1000))
-            assert live_bucket is not None
-            assert purge_expired_rate_limit_buckets(db, now=live_bucket.expires_at - 1, batch_size=2) == 0
-            assert purge_expired_rate_limit_buckets(db, now=live_bucket.expires_at, batch_size=2) >= 1
-    finally:
-        Base.metadata.drop_all(engine)
-        engine.dispose()
-
-
 def test_rate_limit_environment_values_fail_during_import():
-    import os
-    import subprocess
-    import sys
-
     for variable, value in [
         ("RATE_LIMIT_LOGIN_LIMIT", "0"),
         ("RATE_LIMIT_LOGIN_LIMIT", "-1"),
@@ -317,16 +260,100 @@ def test_rate_limit_environment_values_fail_during_import():
         assert variable in result.stderr
 
 
-def test_sqlite_concurrent_increments_are_atomic(tmp_path):
-    from concurrent.futures import ThreadPoolExecutor
-    from sqlalchemy.orm import sessionmaker
+def test_stale_request_cannot_move_window_backwards_or_reset_new_window(monkeypatch):
+    monkeypatch.setitem(POLICIES, "unit_stale", (5, 60))
+    engine = _sqlite_engine()
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as db:
+            first = consume_rate_limit(db, "unit_stale", "stale-window", now=180)
+            stale = consume_rate_limit(db, "unit_stale", "stale-window", now=120)
+            bucket = db.scalar(select(RateLimitBucket))
+            assert first == (True, 60)
+            assert stale == (True, 60)
+            assert bucket.window_start == 180
+            assert bucket.request_count == 2
+            assert bucket.expires_at == 300
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
-    monkeypatch = __import__("pytest").MonkeyPatch()
+
+def test_missing_socket_peer_fails_closed_without_shared_unknown_bucket():
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "headers": [],
+        "client": None,
+    })
+    dependency = rate_limit_ip("login")
+    with pytest.raises(HTTPException) as exc:
+        dependency(request, None)
+    assert exc.value.status_code == 503
+    assert "unknown" not in str(exc.value.detail).lower()
+
+
+def test_trusted_proxy_resolution_only_uses_explicitly_trusted_hops():
+    trusted = (ipaddress.ip_network("10.0.0.0/8"),)
+    assert resolve_forwarded_client_ip(
+        "10.0.0.2", "198.51.100.9, 10.0.0.3", trusted
+    ) == "198.51.100.9"
+    assert resolve_forwarded_client_ip(
+        "203.0.113.8", "198.51.100.9", trusted
+    ) == "203.0.113.8"
+    assert resolve_forwarded_client_ip("10.0.0.2", "not-an-ip", trusted) == "10.0.0.2"
+    assert resolve_forwarded_client_ip("10.0.0.2", "10.0.0.3", trusted) == "10.0.0.2"
+
+
+def test_fixed_window_boundary_burst_is_explicitly_bounded(monkeypatch):
+    monkeypatch.setitem(POLICIES, "unit_boundary", (2, 60))
+    engine = _sqlite_engine()
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as db:
+            assert consume_rate_limit(db, "unit_boundary", "boundary", now=179) == (True, 1)
+            assert consume_rate_limit(db, "unit_boundary", "boundary", now=179) == (True, 1)
+            assert consume_rate_limit(db, "unit_boundary", "boundary", now=180) == (True, 60)
+            assert consume_rate_limit(db, "unit_boundary", "boundary", now=180) == (True, 60)
+            assert consume_rate_limit(db, "unit_boundary", "boundary", now=180) == (False, 60)
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_expired_bucket_cleanup_is_batched_and_preserves_live_rows():
+    engine = _sqlite_engine()
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as db:
+            for index in range(7):
+                consume_rate_limit(db, "read", f"cleanup-{index}", now=1000)
+            consume_rate_limit(db, "read", "still-live", now=1060)
+            assert purge_expired_rate_limit_buckets(db, now=1080, batch_size=2) == 7
+            remaining = db.scalars(select(RateLimitBucket)).all()
+            assert len(remaining) == 1
+            assert remaining[0].expires_at > 1080
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_cleanup_rejects_unbounded_batch_size():
+    engine = _sqlite_engine()
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as db:
+            with pytest.raises(ValueError):
+                purge_expired_rate_limit_buckets(db, now=100, batch_size=10001)
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_sqlite_concurrent_increments_are_atomic(tmp_path, monkeypatch):
     monkeypatch.setitem(POLICIES, "unit_concurrent", (10, 60))
-    engine = enable_sqlite_foreign_keys(create_engine(
-        f"sqlite:///{tmp_path / 'rate-limit-concurrency.db'}",
-        connect_args={"timeout": 30, "check_same_thread": False},
-    ))
+    engine = _sqlite_engine(f"sqlite:///{tmp_path / 'rate-limit-concurrency.db'}")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
 
@@ -344,22 +371,14 @@ def test_sqlite_concurrent_increments_are_atomic(tmp_path):
     finally:
         Base.metadata.drop_all(engine)
         engine.dispose()
-        monkeypatch.undo()
 
 
 def test_postgres_multi_process_concurrency_is_atomic():
-    import json
-    import os
-    import subprocess
-    import sys
-    import uuid
-    import pytest
-    from sqlalchemy import create_engine, delete
-    from app.rate_limit import _bucket_digest
-
     database_url = os.environ.get("TEST_POSTGRES_URL")
     if not database_url:
         pytest.skip("TEST_POSTGRES_URL is not configured")
+
+    from sqlalchemy import create_engine
     engine = create_engine(database_url, pool_pre_ping=True)
     identity = f"postgres-process-test:{uuid.uuid4()}"
     bucket_key = _bucket_digest("login", identity)
@@ -399,21 +418,13 @@ engine.dispose()
         assert all(process.returncode == 0 for process in processes), outputs
         assert sum(int(stdout.strip()) for stdout, _ in outputs) == 50
         with engine.connect() as connection:
-            bucket = connection.execute(
-                select(RateLimitBucket).where(RateLimitBucket.bucket_key == bucket_key)
+            count = connection.execute(
+                select(RateLimitBucket.request_count).where(
+                    RateLimitBucket.bucket_key == bucket_key
+                )
             ).scalar_one()
-            assert bucket.request_count == 100
+            assert count == 100
     finally:
         with engine.begin() as connection:
             connection.execute(delete(RateLimitBucket).where(RateLimitBucket.bucket_key == bucket_key))
         engine.dispose()
-
-
-
-def test_account_bucket_digest_does_not_contain_email():
-    from app.rate_limit import _bucket_digest
-
-    digest = _bucket_digest("login_account", "email:owner@example.com")
-    assert "owner" not in digest
-    assert "example.com" not in digest
-    assert len(digest) == 64
