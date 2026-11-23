@@ -1,7 +1,6 @@
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy.pool import NullPool
 
 from .config import DATABASE_URL
 
@@ -33,9 +32,9 @@ def create_application_engine(database_url: str):
         return enable_sqlite_foreign_keys(engine)
 
     # Supabase's shared transaction pooler is intended for serverless workloads.
-    # Avoid retaining client-side connections between Vercel invocations, require
-    # TLS, and disable psycopg automatic prepared statements (unsupported by the
-    # shared transaction pooler).
+    # Keep one reusable client connection per warm Vercel instance, require TLS,
+    # and disable psycopg automatic prepared statements (unsupported by the
+    # shared transaction pooler). Pre-ping/recycle handle frozen warm instances.
     is_supabase_transaction_pooler = (
         url.port == 6543
         and bool(url.host)
@@ -44,7 +43,11 @@ def create_application_engine(database_url: str):
     if is_supabase_transaction_pooler:
         return create_engine(
             database_url,
-            poolclass=NullPool,
+            pool_size=1,
+            max_overflow=0,
+            pool_timeout=10,
+            pool_recycle=300,
+            pool_pre_ping=True,
             connect_args={"sslmode": "require", "prepare_threshold": None},
         )
 
