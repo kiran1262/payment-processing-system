@@ -3,7 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import Base, enable_sqlite_foreign_keys
-from app.models import Payment, RateLimitBucket
+from app.models import RateLimitBucket
 from app.rate_limit import POLICIES, consume_rate_limit, purge_expired_rate_limit_buckets
 
 
@@ -111,3 +111,46 @@ def test_rate_limit_storage_failure_fails_closed_on_login(client, monkeypatch):
     assert response.status_code == 503
     assert response.headers["Retry-After"] == "5"
     assert "private database details" not in response.text
+
+
+
+def test_registration_limit_blocks_tenant_creation(client, monkeypatch):
+    monkeypatch.setitem(POLICIES, "register", (1, 3600))
+    response = client.post("/api/auth/register", json={
+        "tenant_name": "Blocked Store",
+        "full_name": "Blocked Owner",
+        "email": "blocked-owner@example.com",
+        "password": "a-valid-password-for-test",
+    })
+    assert response.status_code == 429
+    assert int(response.headers["Retry-After"]) > 0
+
+
+def test_refund_and_member_creation_have_separate_limits(client, monkeypatch):
+    monkeypatch.setitem(POLICIES, "refund", (1, 60))
+    monkeypatch.setitem(POLICIES, "member_create", (1, 3600))
+    payload = {
+        "customer_name": "Refund Customer",
+        "customer_email": "refund@example.com",
+        "amount": "15.00",
+        "currency": "INR",
+        "method": "UPI",
+        "description": "Refund throttle",
+    }
+    payment = client.post("/api/payments", json=payload).json()
+    url = f"/api/payments/{payment['payment_id']}/refund"
+    assert client.post(url).status_code == 200
+    blocked_refund = client.post(url)
+    assert blocked_refund.status_code == 429
+    assert int(blocked_refund.headers["Retry-After"]) > 0
+
+    member = {
+        "full_name": "Rate Limited Member",
+        "email": "rate-limited-member@example.com",
+        "password": "member-password-is-long-enough",
+    }
+    assert client.post("/api/tenant/members", json=member).status_code == 201
+    blocked_member = client.post("/api/tenant/members", json={
+        **member, "email": "second-member@example.com"
+    })
+    assert blocked_member.status_code == 429
