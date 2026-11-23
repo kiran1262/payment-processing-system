@@ -6,7 +6,7 @@ A full-stack educational payment-processing demo with a neon analytics dashboard
 
 This project is a **simulation**. It does not connect to a bank, card network, UPI provider, or Stripe and it never moves real money. Do not enter real card numbers, CVVs, UPI PINs, or banking credentials. A successful demo response is not a real payment authorization.
 
-The application is intended for local learning. It now includes basic application-level authentication, owner/member authorization, and tenant-scoped demo data, but it is **not production-ready**. It still lacks rate limiting, durable audit trails, a production identity/session architecture, a ledger/reconciliation system, signed provider webhooks, and secrets-management integration. Browser bearer tokens are held in session storage for this demo and remain exposed to browser-side compromise such as XSS. Do not expose it to the public internet or use it to process real payments.
+The application is intended for local learning. It now includes basic application-level authentication, owner/member authorization, and tenant-scoped demo data, but it is **not production-ready**. Phase 2 adds shared database-backed rate limiting for registration, login, member creation, payment creation, refunds, and authenticated reads. Durable audit trails, a production identity/session architecture, a ledger/reconciliation system, signed provider webhooks, and secrets-management integration remain outstanding. Browser bearer tokens are held in session storage for this demo and remain exposed to browser-side compromise such as XSS. Do not expose it to the public internet or use it to process real payments.
 
 ## Features
 
@@ -19,6 +19,7 @@ The application is intended for local learning. It now includes basic applicatio
 - Owner/member roles with owner-only refunds and tenant membership management
 - One-time local admin bootstrap command for the migration-created legacy workspace
 - SQLite foreign-key enforcement on every application connection
+- Shared database-backed fixed-window rate limits with action-specific policies and HTTP 429 / Retry-After responses
 - Tenant-isolated payment lists, details, refunds, dashboards, and idempotency keys
 - Idempotency-Key support with request-payload conflict detection and safe browser retries
 - Exact decimal-to-paise conversion and email validation
@@ -118,16 +119,16 @@ The migration tests cover a fresh database upgrade, schema drift against ORM met
 |---|---|---|
 | GET | /api/health | Public liveness probe |
 | GET | /api/ready | Public database readiness probe |
-| POST | /api/auth/register | Publicly create a new tenant and its first owner |
-| POST | /api/auth/login | Public login; returns a bearer token |
+| POST | /api/auth/register | Publicly create a new tenant and its first owner; IP rate-limited |
+| POST | /api/auth/login | Public login; returns a bearer token; IP rate-limited |
 | GET | /api/auth/me | Authenticated user and workspace profile |
 | POST | /api/auth/logout | Authenticated session revocation |
-| POST | /api/tenant/members | Owner-only member creation |
-| GET | /api/dashboard | Authenticated, tenant-scoped dashboard metrics |
-| GET | /api/payments | Authenticated, tenant-scoped payment list |
-| POST | /api/payments | Authenticated, tenant-scoped simulated payment creation |
-| GET | /api/payments/{payment_id} | Authenticated payment detail; cross-tenant records return 404 |
-| POST | /api/payments/{payment_id}/refund | Owner-only refund of a successful demo payment |
+| POST | /api/tenant/members | Owner-only member creation; user rate-limited |
+| GET | /api/dashboard | Authenticated, tenant-scoped dashboard metrics; read rate-limited |
+| GET | /api/payments | Authenticated, tenant-scoped payment list; read rate-limited |
+| POST | /api/payments | Authenticated, tenant-scoped simulated payment creation; user rate-limited |
+| GET | /api/payments/{payment_id} | Authenticated payment detail; cross-tenant records return 404; read rate-limited |
+| POST | /api/payments/{payment_id}/refund | Owner-only refund of a successful demo payment; user rate-limited |
 
 ### Create payment example
 
@@ -173,7 +174,7 @@ Use a unique password, do not commit it, and run this only on a trusted machine 
 
 Before any real payment integration or public deployment:
 
-- Add shared-store API rate limiting and abuse controls.
+- Harden and operationalize shared-store API rate limiting (trusted proxy configuration, bucket cleanup scheduling, production load/concurrency validation).
 - Add durable, append-only audit logging for sensitive business actions.
 - Implement a balanced double-entry ledger and reconciliation.
 - Integrate an authorized payment service provider using its official SDK and sandbox.
