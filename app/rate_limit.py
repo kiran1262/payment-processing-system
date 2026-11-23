@@ -8,6 +8,7 @@ from __future__ import annotations
 import hmac
 from hashlib import sha256
 from math import ceil
+import os
 from time import time
 
 from fastapi import Depends, HTTPException, Request
@@ -22,14 +23,22 @@ from .config import RATE_LIMIT_HASH_SECRET
 from .database import get_db
 from .models import RateLimitBucket, User
 
-# limit, window_seconds. Keep policies action-specific and easy to override in tests.
+def _policy(name: str, default_limit: int, default_window: int) -> tuple[int, int]:
+    """Read action policy from environment while retaining safe local defaults."""
+    return (
+        int(os.environ.get(f"RATE_LIMIT_{name.upper()}_LIMIT", default_limit)),
+        int(os.environ.get(f"RATE_LIMIT_{name.upper()}_WINDOW_SECONDS", default_window)),
+    )
+
+
+# Policies are action-specific and can be tuned per deployment.
 POLICIES: dict[str, tuple[int, int]] = {
-    "register": (5, 3600),
-    "login": (10, 900),
-    "member_create": (10, 3600),
-    "payment_create": (20, 60),
-    "refund": (5, 60),
-    "read": (120, 60),
+    "register": _policy("register", 5, 3600),
+    "login": _policy("login", 10, 900),
+    "member_create": _policy("member_create", 10, 3600),
+    "payment_create": _policy("payment_create", 20, 60),
+    "refund": _policy("refund", 5, 60),
+    "read": _policy("read", 120, 60),
 }
 
 
