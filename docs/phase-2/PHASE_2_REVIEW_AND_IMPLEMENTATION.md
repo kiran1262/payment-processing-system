@@ -250,7 +250,7 @@ The QA report records the original findings and the follow-up remediation eviden
 The deployment target selected for this project is **Vercel + Supabase PostgreSQL**. The implementation and operator procedure are documented in [`docs/deployment/VERCEL_SUPABASE.md`](../deployment/VERCEL_SUPABASE.md).
 
 Deployment-specific changes added on the Phase 2 branch:
-- `api/index.py` exports the existing FastAPI application for Vercel's Python runtime.
+- `main.py` exports the existing FastAPI application for Vercel's Python runtime.
 - `vercel.json` explicitly includes `frontend/**` in the function bundle because FastAPI serves those assets.
 - `app/database.py` detects Supabase's shared transaction pooler on port 6543 and uses SQLAlchemy `NullPool`, TLS, and disabled Psycopg automatic prepared statements.
 - `app/proxy.py` and `app/main.py` use Vercel's documented platform-overwritten `X-Forwarded-For` client IP when `VERCEL=1`. Missing or malformed values fail closed for public IP-limited routes. Self-hosted proxy allowlisting remains unchanged.
