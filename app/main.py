@@ -19,6 +19,7 @@ from .database import get_db
 from .models import AuthSession, Payment, Tenant, User
 from .schemas import LoginRequest, MemberCreate, PaymentCreate, RegisterRequest
 from .services import IdempotencyConflictError, create_payment, dashboard_stats, refund_payment
+from .rate_limit import rate_limit_ip, rate_limit_user
 
 logger = logging.getLogger(__name__)
 BASE = Path(__file__).resolve().parent.parent
@@ -49,7 +50,11 @@ def readiness(db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(
+    payload: RegisterRequest,
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_ip("register")),
+):
     try:
         tenant, user, token, expires_at = create_tenant_owner(
             db, payload.tenant_name, payload.full_name, str(payload.email), payload.password
@@ -64,7 +69,11 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login")
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(
+    payload: LoginRequest,
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_ip("login")),
+):
     user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(401, "Invalid email or password", headers={"WWW-Authenticate": "Bearer"})
@@ -76,7 +85,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @app.get("/api/auth/me")
-def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def me(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("read")),
+):
     return user_json(user, db)
 
 
@@ -118,7 +131,11 @@ def create_member(
 
 
 @app.get("/api/dashboard")
-def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def dashboard(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("read")),
+):
     return dashboard_stats(db, user.tenant_id)
 
 
@@ -156,7 +173,12 @@ def new_payment(
 
 
 @app.get("/api/payments/{payment_id}")
-def get_payment(payment_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_payment(
+    payment_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("read")),
+):
     payment = db.scalar(select(Payment).where(
         Payment.payment_id == payment_id, Payment.tenant_id == user.tenant_id
     ))
@@ -166,7 +188,12 @@ def get_payment(payment_id: str, user: User = Depends(get_current_user), db: Ses
 
 
 @app.post("/api/payments/{payment_id}/refund")
-def refund(payment_id: str, owner: User = Depends(require_owner), db: Session = Depends(get_db)):
+def refund(
+    payment_id: str,
+    owner: User = Depends(require_owner),
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit_user("refund")),
+):
     payment = db.scalar(select(Payment).where(
         Payment.payment_id == payment_id, Payment.tenant_id == owner.tenant_id
     ))
