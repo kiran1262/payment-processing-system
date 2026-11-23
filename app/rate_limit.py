@@ -113,7 +113,7 @@ def consume_rate_limit(
         db.rollback()
         raise
 
-    retry_after = max(1, ceil(effective_window + window_seconds - current))
+    retry_after = min(window_seconds, max(1, ceil(effective_window + window_seconds - current)))
     return request_count <= limit, retry_after
 
 
@@ -183,7 +183,7 @@ def purge_expired_rate_limit_buckets(
                 .limit(batch_size)
             )
             result = db.execute(
-                delete(RateLimitBucket).where(RateLimitBucket.bucket_key.in_(expired_keys))
+                delete(RateLimitBucket).where(\n                    RateLimitBucket.expires_at <= current,\n                    RateLimitBucket.bucket_key.in_(expired_keys),\n                )
             )
             deleted = result.rowcount or 0
             db.commit()
