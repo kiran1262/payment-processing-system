@@ -6,7 +6,7 @@ A full-stack educational payment-processing demo with a neon analytics dashboard
 
 This project is a **simulation**. It does not connect to a bank, card network, UPI provider, or Stripe and it never moves real money. Do not enter real card numbers, CVVs, UPI PINs, or banking credentials. A successful demo response is not a real payment authorization.
 
-The application is intended for local learning. It now includes basic application-level authentication, owner/member authorization, and tenant-scoped demo data, but it is **not production-ready**. Phase 2 adds shared database-backed rate limiting for registration, login, member creation, payment creation, refunds, and authenticated reads. Durable audit trails, a production identity/session architecture, a ledger/reconciliation system, signed provider webhooks, and secrets-management integration remain outstanding. Browser bearer tokens are held in session storage for this demo and remain exposed to browser-side compromise such as XSS. Do not expose it to the public internet or use it to process real payments.
+The application is intended for local learning. It now includes basic application-level authentication, owner/member authorization, and tenant-scoped demo data, but it is **not production-ready**. Phase 2 adds shared database-backed rate limiting for registration, login, member creation, payment creation, refunds, and authenticated reads. Login uses both a generous IP budget and a keyed-HMAC per-account budget to reduce distributed password spraying. Durable audit trails, a production identity/session architecture, a ledger/reconciliation system, signed provider webhooks, and secrets-management integration remain outstanding. Browser bearer tokens are held in session storage for this demo and remain exposed to browser-side compromise such as XSS. Do not expose it to the public internet or use it to process real payments.
 
 ## Features
 
@@ -99,7 +99,7 @@ Useful commands (Windows PowerShell):
     .\.venv\Scripts\python.exe -m alembic upgrade head
     .\.venv\Scripts\python.exe -m alembic check
 
-The application and Alembic both read DATABASE_URL. SQLite is the local default. The SQLAlchemy engine only applies SQLite-specific connection options to SQLite URLs. Rate-limit identity keys use HMAC-SHA256; set `RATE_LIMIT_HASH_SECRET` to a high-entropy secret through the deployment secret manager outside local development. Startup fails when `APP_ENV=production` and the secret is missing. The built-in fallback is development-only. Tune action policies with `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS` (actions: `REGISTER`, `LOGIN`, `MEMBER_CREATE`, `PAYMENT_CREATE`, `REFUND`, `READ`).
+The application and Alembic both read DATABASE_URL. SQLite is the local default. The SQLAlchemy engine only applies SQLite-specific connection options to SQLite URLs. Rate-limit identity keys use HMAC-SHA256; set `RATE_LIMIT_HASH_SECRET` to a high-entropy secret through the deployment secret manager outside local development. Set TRUSTED_PROXY_IPS to comma-separated exact proxy IPs or CIDR ranges. Startup fails when `APP_ENV=production` and the secret is missing. The built-in fallback is development-only. Tune action policies with `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS` (actions: `REGISTER`, `LOGIN`, `MEMBER_CREATE`, `PAYMENT_CREATE`, `REFUND`, `READ`).
 
 ## Run tests
 
@@ -115,22 +115,23 @@ The migration tests cover a fresh database upgrade, schema drift against ORM met
 
 ## API rate limits
 
-Phase 2 uses atomic, database-backed fixed-window counters shared by application workers that use the same database. Public registration and login limits use the direct socket peer IP. Authenticated limits use the verified tenant and user IDs.
+Phase 2 uses atomic, database-backed fixed-window counters shared by application workers that use the same database. Registration uses the resolved client IP. Login uses a generous IP budget plus a per-account budget keyed by an HMAC of the normalized email. Authenticated limits use verified tenant and user IDs.
 
 | Action | Default limit | Window | Scope |
 |---|---:|---:|---|
 | Registration | 5 | 1 hour | IP |
-| Login | 10 | 15 minutes | IP |
+| Login IP | 60 | 15 minutes | IP |
+| Login account | 10 | 15 minutes | HMAC of normalized email |
 | Member creation | 10 | 1 hour | User + tenant |
 | Payment creation | 20 | 1 minute | User + tenant |
 | Refund | 5 | 1 minute | User + tenant |
 | Authenticated reads | 120 | 1 minute | User + tenant |
 
-A blocked request returns HTTP `429` with an integer `Retry-After` header. If the limiter storage is unavailable, the API fails closed with a generic HTTP `503`. Liveness and readiness probes are exempt. Forwarded IP headers are ignored; if deployed behind a reverse proxy, configure trusted proxy handling at the deployment edge rather than accepting arbitrary client-supplied headers.
+A blocked request returns HTTP `429` with an integer `Retry-After` header. If the limiter storage is unavailable, the API fails closed with a generic HTTP `503`. Liveness and readiness probes are exempt. Forwarded IP headers are ignored unless TRUSTED_PROXY_IPS explicitly lists trusted proxy IPs/CIDRs. The application walks the X-Forwarded-For chain from right to left and selects the first untrusted hop. The proxy must overwrite or append the header. Leave the setting empty when no trusted proxy is used; never trust all networks (0.0.0.0/0 or ::/0). Run Uvicorn with --no-proxy-headers so this explicit application allowlist is the only proxy trust policy.
 
 Tune policies using `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS`, where ACTION is `REGISTER`, `LOGIN`, `MEMBER_CREATE`, `PAYMENT_CREATE`, `REFUND`, or `READ`. In production set `APP_ENV=production` and provide a high-entropy `RATE_LIMIT_HASH_SECRET` through the deployment secret manager. Startup fails if the production secret is missing. The development fallback must not be used in production.
 
-Expired bucket cleanup is exposed as `purge_expired_rate_limit_buckets` in `app/rate_limit.py`; schedule it as an operational maintenance task before public deployment. Fixed-window limits can allow bursts across adjacent window boundaries and require synchronized application clocks. PostgreSQL multi-worker concurrency validation remains a later project gate.
+Expired bucket cleanup is available as a bounded command: python -m app.maintenance purge-rate-limits --batch-size 1000. Schedule it every 5–15 minutes with cron, systemd, Kubernetes CronJob, or Windows Task Scheduler. Fixed windows intentionally permit up to approximately twice the configured limit across adjacent windows; a regression test records this boundary behavior. Use a token-bucket/sliding-window limiter at a trusted gateway for strict public-production burst control. Keep host clocks synchronized with NTP. PostgreSQL CI runs a multi-process concurrency test against PostgreSQL 16. Benchmark database contention on the target deployment before increasing limits.
 
 ## API endpoints
 
@@ -218,6 +219,9 @@ Do not make the demo publicly accessible until the above controls are implemente
     │   ├── config.py
     │   ├── database.py
     │   ├── main.py
+    │   ├── proxy.py
+    │   ├── rate_limit.py
+    │   └── maintenance.py
     │   ├── bootstrap_legacy_owner.py
     │   ├── models.py
     │   ├── schemas.py
@@ -230,7 +234,8 @@ Do not make the demo publicly accessible until the above controls are implemente
     │   ├── conftest.py
     │   ├── test_auth_tenants.py
     │   ├── test_migrations.py
-    │   └── test_payments.py
+    │   ├── test_payments.py
+    │   └── test_rate_limiting.py
     ├── alembic.ini
     ├── .gitignore
     ├── README.md
