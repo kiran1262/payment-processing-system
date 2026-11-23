@@ -5,7 +5,7 @@
 > **PR:** [#5 — Phase 2: API rate limiting and abuse controls](https://github.com/kiran1262/payment-processing-system/pull/5)  
 > **Reviewed branch head:** `647c222980bcef8c1d899cacfc2ec8992e415880`  
 > **Review date:** 2026-11-23  
-> **Disposition:** Initial findings have been addressed in a follow-up implementation batch. See the remediation status table below; do not mark Phase 2 complete until latest-head CI and deployment checks pass.
+> **Disposition:** Initial findings have been addressed in a follow-up implementation batch. See the remediation status table below; do not mark Phase 2 complete until the deployment owner installs the cleanup schedule and sets the actual trusted proxy allowlist.
 
 ---
 
@@ -292,7 +292,7 @@ Do not weaken these behaviors while addressing the findings.
 
 ## 6. Current QA decision
 
-The follow-up hardening code passed 61 tests and the PostgreSQL multi-process concurrency and contention smoke steps on code commit `d1eba7c9e804d2ef1bb1a9d954189427478e926b`. PR #5 remains draft/open pending the latest documentation-only commit CI result and the deployment operator's proxy/scheduler configuration. Do not describe the demo as production-ready: fixed-window boundary bursts, primary-database contention, account-throttle denial-of-service trade-offs, and large botnet risk remain documented limitations.
+The follow-up hardening code passed 61 tests and the PostgreSQL multi-process concurrency and contention smoke steps on code commit `d1eba7c9e804d2ef1bb1a9d954189427478e926b`. PR #5 remains draft/open. Latest PR head `7f2d5fa543d847d51f0aed818e66a06e32b0fb50` passed 61 tests, PostgreSQL multi-process concurrency, the PostgreSQL contention smoke benchmark, and frontend syntax. Deployment-specific proxy/scheduler configuration remains with the operator. Do not describe the demo as production-ready: fixed-window boundary bursts, primary-database contention, account-throttle denial-of-service trade-offs, and large botnet risk remain documented limitations.
 
 ## 7. Follow-up remediation status
 
@@ -302,7 +302,7 @@ The follow-up hardening code passed 61 tests and the PostgreSQL multi-process co
 | P2-QA-02 invalid policy config | Action limits/windows are validated during module startup, including positive bounds and parse errors. | Subprocess tests for zero, negative, and non-integer values. |
 | P2-QA-03 missing peer identity | Missing ASGI client identity returns generic 503 rather than a shared unknown bucket. | Dependency-level regression test. |
 | P2-QA-04 distributed password spraying | Login uses a 60/15m IP budget and 10/15m HMAC account bucket; generic responses and no raw email persistence. | Login IP/network/account-budget and HMAC-digest tests. |
-| P2-QA-05 concurrency/PostgreSQL | Added file-backed SQLite concurrent increment test and PostgreSQL 16 multi-process integration test in CI. | Must pass latest PR CI. |
+| P2-QA-05 concurrency/PostgreSQL | Added file-backed SQLite concurrent increment test and PostgreSQL 16 multi-process integration test in CI. | Passed: 4 independent processes, 100 requests, 50 allowed; full CI green. |
 | P2-QA-06 cleanup | Added bounded batch deletion and a maintenance command. | Batch cleanup regression; scheduler remains operator-configured. |
 | P2-QA-07 documentation | Master record and README updated with policies, proxy, cleanup, benchmark, and boundary semantics. | Documentation review. |
 
@@ -313,4 +313,4 @@ The follow-up hardening code passed 61 tests and the PostgreSQL multi-process co
 - Database contention: run python -m scripts.benchmark_rate_limit --workers 20 --requests 500 against a staging database using the same DB engine and worker topology. Compare p50/p95 with the API latency budget; use a dedicated limiter if primary DB write contention is material.
 - Fixed-window boundary burst: a limit of N can allow up to roughly 2N in a short interval spanning a boundary. This is tested and documented; strict burst smoothing requires token bucket/sliding window at a trusted gateway or a dedicated limiter.
 - Password spraying: account-level HMAC throttling constrains distributed attempts but creates a bounded temporary lockout/denial-of-service trade-off. Generic responses reduce account enumeration. This is not a substitute for MFA, breached-password detection, bot controls, or anomaly monitoring.
-- PostgreSQL multi-worker: CI starts PostgreSQL 16 and launches four independent Python processes against one shared bucket; exactly 50 of 100 requests are allowed while all 100 increments are retained. The CI smoke benchmark also ran 100 requests with 8 threads.
+- PostgreSQL multi-worker: CI starts PostgreSQL 16 and launches four independent Python processes against one shared bucket; exactly 50 of 100 requests are allowed while all 100 increments are retained. The CI smoke benchmark ran 100 requests with 8 threads at 601.9 req/s, median 5.9 ms, p95 44.7 ms, max 61.2 ms on a GitHub-hosted runner.
