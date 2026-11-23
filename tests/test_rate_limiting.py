@@ -407,3 +407,13 @@ engine.dispose()
         with engine.begin() as connection:
             connection.execute(delete(RateLimitBucket).where(RateLimitBucket.bucket_key == bucket_key))
         engine.dispose()
+
+
+
+def test_account_bucket_digest_does_not_contain_email():
+    from app.rate_limit import _bucket_digest
+
+    digest = _bucket_digest("login_account", "email:owner@example.com")
+    assert "owner" not in digest
+    assert "example.com" not in digest
+    assert len(digest) == 64
