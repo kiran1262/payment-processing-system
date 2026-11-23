@@ -151,11 +151,11 @@ The original record mixed proposed and implemented designs, old test counts, old
 
 ## 5. Latest automated verification
 
-Latest verified implementation evidence recorded for PR head `0c3cda67e5bbb5a2fa2c09c8c629e8c840c0d6c0`:
+Latest verified implementation and documentation evidence on PR head `9dedbd4068de0061baed8c6a1864a740c727574d`:
 
 - **61 pytest tests passed, 1 warning.**
 - PostgreSQL 16 multi-process test: four independent processes, 100 requests, exactly 50 allowed, all 100 increments retained.
-- PostgreSQL contention smoke benchmark: 100 requests, 8 workers; 573.0 requests/second, median 5.5 ms, p95 88.5 ms, max 105.3 ms on a GitHub-hosted runner.
+- PostgreSQL contention smoke benchmark: 100 requests, 8 workers; 768.7 requests/second, median 4.7 ms, p95 41.0 ms, max 53.0 ms on a GitHub-hosted runner.
 - `node --check frontend/app.js` passed.
 - Migration tests, including fresh upgrade and model drift checks, passed.
 - The warning is the existing Starlette/httpx TestClient deprecation warning.
