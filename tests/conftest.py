@@ -3,12 +3,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from app.database import Base, get_db
+from app.database import Base, get_db, enable_sqlite_foreign_keys
 from app.main import app
 
 @pytest.fixture()
 def client():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    engine = enable_sqlite_foreign_keys(create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool))
     TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
 
