@@ -272,13 +272,13 @@ No Supabase project, Vercel project, production credentials, migration, cron job
 
 ### Latest Vercel/Supabase preparation CI evidence
 
-The final Vercel/Supabase code and documentation passed on PR branch commit `f146f79f0a629fe8f7515d5cd9de51874346f743` (workflow run [45131666733](https://github.com/kiran1262/payment-processing-system/actions/runs/45131666733)):
+The latest complete Vercel/Supabase branch passed on commit `d26fc411b0e8e4fe70fd0c74f0a3b5c5583a0978` (workflow run [45131885474](https://github.com/kiran1262/payment-processing-system/actions/runs/45131885474)):
 - **67 pytest tests passed, 1 warning**.
 - Vercel client-IP parsing and middleware tests passed, including fail-closed malformed-header behavior.
 - Supabase transaction-pooler one-connection pool configuration passed (`pool_size=1`, `max_overflow=0`, pre-ping and five-minute recycle).
 - Root FastAPI entrypoint and frontend bundle configuration tests passed.
 - PostgreSQL 16 multi-process limiter test and contention smoke benchmark passed.
-- Benchmark: 100 requests / 8 workers; 637.1 req/s, median 8.0 ms, p95 40.7 ms, max 50.7 ms on a GitHub-hosted runner.
+- Benchmark: 100 requests / 8 workers; 860.2 req/s, median 4.7 ms, p95 40.2 ms, max 51.4 ms on a GitHub-hosted runner.
 - `node --check frontend/app.js` passed.
 
 The benchmark is a CI smoke sample, not a production capacity guarantee. This verifies the repository code and documentation, not a live Vercel or Supabase deployment.
