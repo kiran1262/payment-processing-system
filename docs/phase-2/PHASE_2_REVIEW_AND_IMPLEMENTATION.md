@@ -176,11 +176,12 @@ These are conservative demo defaults, not universal production recommendations. 
 
 ### Residual risks / items not yet proven
 
-- GitHub Actions passed **45 tests, 1 warning** on code/test commit `9bc3984559092183cc3e4a83f105a4108601c308`; `node --check frontend/app.js` also passed. A later documentation-only commit still needs its own latest-head CI confirmation.
+- GitHub Actions passed **45 tests, 1 warning** on code/test commit `9bc3984559092183cc3e4a83f105a4108601c308`; the later PR-head commit `f5f95b7098c4c3d6280cb1b730af86eeb08e15f3` also passed 45 tests and `node --check frontend/app.js`. The warning is a Starlette deprecation warning from the current httpx/TestClient integration.
 - Fixed-window counters permit a burst across adjacent window boundaries; token-bucket/sliding-window behavior may be preferable for a production deployment.
+- Window boundaries use application-process clocks. Multi-instance deployments must maintain clock synchronization; clock skew can cause inconsistent window assignment.
 - The shared limiter currently uses the primary database. This creates database contention and means limiter availability is coupled to database availability.
 - Expired-bucket cleanup is exposed as a function but no scheduler/maintenance command is wired yet; production operations must schedule it.
-- `RATE_LIMIT_HASH_SECRET` must be set to a high-entropy secret in production; the built-in fallback is development-only. Rotating it resets the effective rate-limit key namespace.
+- `RATE_LIMIT_HASH_SECRET` must be set to a high-entropy secret in production; the built-in fallback is development-only. Rotating it resets the effective rate-limit key namespace. Policies can be tuned with `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS` environment variables.
 - Client IP uses the direct ASGI socket peer. Forwarded headers are intentionally ignored; deployments behind a reverse proxy need explicit trusted-proxy configuration at the edge.
 - Login is throttled by IP, not by account/email. Distributed password spraying across many IPs remains a residual risk; account-scoped throttling must be designed carefully to avoid attacker-induced account lockout.
 - Webhook ingress does not exist and remains a Phase 5 concern.
