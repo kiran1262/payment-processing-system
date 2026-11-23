@@ -161,7 +161,7 @@ These are conservative demo defaults, not universal production recommendations. 
 | Date | Change | Tests / evidence | Status |
 |---|---|---|---|
 | 2026-11-23 | Created this master record and began source audit on a branch from merged Phase 1 `main`. | PR #4 verified merged; source inventory captured. | Complete |
-| 2026-11-23 | Added atomic fixed-window limiter using shared SQL database upserts, rate-limit bucket model/migration 0003, route dependencies, safe 429/503 behavior, frontend Retry-After guidance, and focused tests. | Latest head `8742df5e2e1166cc887cfec971ffb47acbf21f96`: **46 passed, 1 warning**; frontend `node --check` passed. | In progress |
+| 2026-11-23 | Added atomic fixed-window limiter using shared SQL database upserts, rate-limit bucket model/migration 0003, route dependencies, safe 429/503 behavior, frontend Retry-After guidance, and focused tests. | Latest checked head `a548f8a0cae05a166afe9e43d272ba4e08f4b512`: **46 passed, 1 warning**; frontend `node --check` passed. | In progress |
 
 ## 9. Current implementation details and residual review
 
@@ -176,7 +176,7 @@ These are conservative demo defaults, not universal production recommendations. 
 
 ### Residual risks / items not yet proven
 
-- Latest GitHub Actions run on `8742df5e2e1166cc887cfec971ffb47acbf21f96` passed **46 tests, 1 warning**; `node --check frontend/app.js` also passed. The warning is a Starlette deprecation warning from the current httpx/TestClient integration.
+- Latest GitHub Actions run on `a548f8a0cae05a166afe9e43d272ba4e08f4b512` passed **46 tests, 1 warning**; `node --check frontend/app.js` also passed. The warning is a Starlette deprecation warning from the current httpx/TestClient integration.
 - Fixed-window counters permit a burst across adjacent window boundaries; token-bucket/sliding-window behavior may be preferable for a production deployment.
 - Window boundaries use application-process clocks. Multi-instance deployments must maintain clock synchronization; clock skew can cause inconsistent window assignment.
 - The shared limiter currently uses the primary database. This creates database contention and means limiter availability is coupled to database availability.
