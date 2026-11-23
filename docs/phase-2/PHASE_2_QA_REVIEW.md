@@ -203,13 +203,13 @@ Operator setup is still pending: create the actual Supabase/Vercel projects, app
 
 ## 9. Vercel/Supabase regression verification
 
-Final CI run [45131666733](https://github.com/kiran1262/payment-processing-system/actions/runs/45131666733) on commit `f146f79f0a629fe8f7515d5cd9de51874346f743` passed:
+Latest complete branch CI run [45131885474](https://github.com/kiran1262/payment-processing-system/actions/runs/45131885474) on commit `d26fc411b0e8e4fe70fd0c74f0a3b5c5583a0978` passed:
 - **67 pytest tests passed, 1 warning**.
 - Vercel client-IP parsing, per-IP isolation, and malformed-header fail-closed tests passed.
 - Supabase transaction-pooler one-connection pool selection passed.
 - Root Vercel FastAPI entrypoint and frontend bundle configuration tests passed.
 - PostgreSQL 16 multi-process limiter test and benchmark passed.
-- Benchmark: 637.1 req/s, median 8.0 ms, p95 40.7 ms, max 50.7 ms (100 requests, 8 workers).
+- Benchmark: 860.2 req/s, median 4.7 ms, p95 40.2 ms, max 51.4 ms (100 requests, 8 workers).
 - Frontend JavaScript syntax check passed.
 
 The warning remains the existing Starlette/httpx TestClient deprecation warning. The run verifies the code changes; it does not verify a live Vercel or Supabase project.
