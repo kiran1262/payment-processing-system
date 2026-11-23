@@ -4,8 +4,8 @@
 > Project: `kiran1262/payment-processing-system`  
 > Base: `main` (PR #4 merged)  
 > Working branch: `feat/phase-2-rate-limiting-abuse-controls`  
-> Status: **Implementation in progress; latest CI green; final review pending**  
-> Scope: API rate limiting and abuse controls. This document is updated as findings are verified and fixes land.
+> Status: **Implementation in progress; CI green; independent QA found outstanding issues; not ready to merge**  
+> Scope: API rate limiting and abuse controls. This document is updated as findings are verified and fixes land. The independent QA findings for the current implementation are recorded in [`PHASE_2_QA_REVIEW.md`](./PHASE_2_QA_REVIEW.md).
 
 ---
 
@@ -208,9 +208,24 @@ These are conservative demo defaults, not universal production recommendations. 
 | 6 | PostgreSQL concurrency and failure-injection tests | Final technical gate across prior phases |
 | Deployment gate | Secrets, TLS, monitoring, backups/restore, rollback, security review, provider sandbox/compliance | Required before public/real use |
 
-## 12. Change-control checklist
+## 12. Independent QA review — 2026-11-23
+
+An independent review of PR #5 head `647c222980bcef8c1d899cacfc2ec8992e415880` is recorded in [`PHASE_2_QA_REVIEW.md`](./PHASE_2_QA_REVIEW.md). It identified:
+
+- **P2-QA-01 (High):** stale requests can move a fixed-window bucket backwards during boundary races.
+- **P2-QA-02 (Medium):** zero/negative environment policy values can cause unhandled request-time `ValueError` responses.
+- **P2-QA-03 (Medium):** missing socket peer identity falls back to a shared `unknown` bucket.
+- **P2-QA-04 (Medium):** IP-only login throttling has NAT fairness and distributed password-spraying limitations.
+- **P2-QA-05 (High):** concurrent increment and PostgreSQL behavior are not yet demonstrated by automated tests.
+- **P2-QA-06 (Medium):** cleanup is unbounded and has no scheduled maintenance command.
+- **P2-QA-07 (Low):** proposal and verification wording in this master record needs reconciliation.
+
+No application code was changed during this QA-only pass. PR #5 must remain draft/open until the findings are fixed or explicitly dispositioned and the required verification is complete.
+
+## 13. Change-control checklist
 
 - [ ] Confirm current branch and clean base before every implementation batch.
+- [x] Record the current Phase 2 QA findings with severity, file/function, failure scenario, and required regression coverage in `PHASE_2_QA_REVIEW.md`.
 - [ ] Record each new bug with severity, exact file/route, reproduction, and regression test.
 - [ ] Fix only verified issues; avoid unrelated refactors.
 - [ ] Add Alembic migration for schema changes; no startup schema creation.
