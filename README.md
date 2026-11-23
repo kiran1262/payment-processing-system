@@ -59,7 +59,7 @@ If the `py` launcher is not installed but Python 3.11+ is available on your PATH
 
     python -m venv .venv
 
-Then run the remaining commands with ` .\.venv\Scripts\python.exe ` as the Python executable; the path is relative to the project folder.
+Then run the remaining commands with `.\.venv\Scripts\python.exe` as the Python executable; the path is relative to the project folder.
 
 ### Optional: activate the environment
 
