@@ -6,7 +6,7 @@ A full-stack educational payment-processing demo with a neon analytics dashboard
 
 This project is a **simulation**. It does not connect to a bank, card network, UPI provider, or Stripe and it never moves real money. Do not enter real card numbers, CVVs, UPI PINs, or banking credentials. A successful demo response is not a real payment authorization.
 
-The application is intended for local learning. It now includes basic application-level authentication, owner/member authorization, and tenant-scoped demo data, but it is **not production-ready**. Phase 2 adds shared database-backed rate limiting for registration, login, member creation, payment creation, refunds, and authenticated reads. Login uses both a generous IP budget and a keyed-HMAC per-account budget to reduce distributed password spraying. Durable audit trails, a production identity/session architecture, a ledger/reconciliation system, signed provider webhooks, and secrets-management integration remain outstanding. Browser bearer tokens are held in session storage for this demo and remain exposed to browser-side compromise such as XSS. Do not expose it to the public internet or use it to process real payments.
+The application is intended for local learning. It now includes basic application-level authentication, owner/member authorization, and tenant-scoped demo data, but it is **not production-ready**. Phase 2 adds shared database-backed rate limiting for registration, login, member creation, payment creation, refunds, and authenticated reads. Login uses three keyed-HMAC budgets (IP, IPv4 /24 or IPv6 /64 network prefix, and normalized account) to reduce password spraying while limiting NAT collateral. Large botnets spread across many networks still require MFA, adaptive risk signals, and bot controls. Durable audit trails, a production identity/session architecture, a ledger/reconciliation system, signed provider webhooks, and secrets-management integration remain outstanding. Browser bearer tokens are held in session storage for this demo and remain exposed to browser-side compromise such as XSS. Do not expose it to the public internet or use it to process real payments.
 
 ## Features
 
@@ -231,6 +231,14 @@ Do not make the demo publicly accessible until the above controls are implemente
     │   ├── index.html
     │   ├── styles.css
     │   └── app.js
+    ├── deploy/
+    │   ├── systemd/
+    │   │   ├── payment-rate-limit-cleanup.service
+    │   │   └── payment-rate-limit-cleanup.timer
+    │   └── windows/
+    │       └── cleanup-rate-limits.ps1
+    ├── scripts/
+    │   └── benchmark_rate_limit.py
     ├── tests/
     │   ├── conftest.py
     │   ├── test_auth_tenants.py
