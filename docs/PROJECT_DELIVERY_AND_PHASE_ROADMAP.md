@@ -103,18 +103,18 @@ The endpoint returns a healthy response without checking database connectivity. 
 
 ### Verification checklist for closing these findings
 
-- [ ] Every protected endpoint rejects missing/invalid credentials.
-- [ ] Registration, login, logout, expiry, revocation, and password verification are tested.
-- [ ] Owner/member authorization is deny-by-default and tested for each privileged operation.
-- [ ] Every payment query and mutation is tenant-scoped, including dashboard aggregates and idempotency recovery.
-- [ ] Existing payment rows survive the tenant migration and are assigned to the documented legacy/demo tenant.
-- [ ] Same idempotency key across different tenants is independent; same-tenant replay and payload conflict semantics remain correct.
-- [ ] Retry after a committed request with a lost response does not create a duplicate payment.
-- [ ] Dashboard chart is data-backed or explicitly labelled illustrative.
-- [ ] UI copy accurately describes a simulated payment application.
-- [ ] Liveness and readiness semantics are explicit and tested if readiness is added.
-- [ ] Existing validation, payment, refund, and migration tests remain green.
-- [ ] Full CI passes and a final route/service query review finds no missing tenant filters.
+- [x] Every protected endpoint rejects missing/invalid credentials.
+- [x] Registration, login, logout, expiry, revocation, and password verification are tested.
+- [x] Owner/member authorization is deny-by-default and tested for each privileged operation.
+- [x] Every payment query and mutation is tenant-scoped, including dashboard aggregates and idempotency recovery.
+- [x] Existing payment rows survive the tenant migration and are assigned to the documented legacy/demo tenant.
+- [x] Same idempotency key across different tenants is independent; same-tenant replay and payload conflict semantics remain correct.
+- [x] Retry after a committed request with a lost response does not create a duplicate payment.
+- [x] Dashboard chart is data-backed or explicitly labelled illustrative.
+- [x] UI copy accurately describes a simulated payment application.
+- [x] Liveness and readiness semantics are explicit and tested if readiness is added.
+- [x] Existing validation, payment, refund, and migration tests remain green.
+- [x] Full CI passes and a final route/service query review finds no missing tenant filters.
 
 **Closure rule:** mark a QA item fixed only after the relevant code change is present, a regression test covers it, and the required checks pass. A review comment, documentation update, or green CI run for the documentation-only baseline is not evidence that the underlying defect has been fixed.
 
@@ -148,8 +148,9 @@ The seven QA findings have now been addressed in application code on the PR #4 b
 
 ### Verification record
 
-- Initial CI exposed three failures: two migration metadata drift findings and a changed health response contract. Both root causes were corrected; tests were not weakened.
-- The follow-up workflow passed on the code/migration correction commit.
-- Additional regression tests were then added for unavailable-database readiness and frontend retry-key persistence. The latest workflow for those tests must pass before this phase is marked complete.
-- PR #4 remains a draft and must not be merged until the latest workflow and final review pass.
+- The first CI run exposed three failures: two migration metadata drift findings and a changed health response contract. The underlying causes were corrected without weakening tests.
+- The latest full GitHub Actions run passed on commit 8a846c0ef95d91c0cf0f241187dc24dad051d6ed.
+- Result: **30 passed, 1 warning**. The run includes authentication, expired/revoked sessions, owner/member authorization, cross-tenant access, tenant-scoped idempotency, migration preservation/schema drift, readiness success/failure, frontend retry-key persistence, UI-copy assertions, and the existing payment/refund suite.
+- Frontend coverage is source-level regression checking; a real browser end-to-end test has not yet been run.
+- PR #4 remains a draft. The implementation is ready for review, not merged. Keep it unmerged until you have reviewed the API/security behavior and decide to merge.
 
