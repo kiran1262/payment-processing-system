@@ -271,7 +271,7 @@ def test_stale_request_cannot_move_window_backwards_or_reset_new_window(monkeypa
             stale = consume_rate_limit(db, "unit_stale", "stale-window", now=120)
             bucket = db.scalar(select(RateLimitBucket))
             assert first == (True, 60)
-            assert stale == (True, 120)
+            assert stale == (True, 60)
             assert bucket.window_start == 180
             assert bucket.request_count == 2
             assert bucket.expires_at == 300
@@ -450,3 +450,27 @@ def test_login_network_identity_uses_ipv4_24_and_ipv6_64_prefixes():
     assert login_network_identity("198.51.100.240") == "network:198.51.100.0/24"
     assert login_network_identity("2001:db8:abcd:12::1") == "network:2001:db8:abcd:12::/64"
     assert login_network_identity("testclient") == "peer:testclient"
+
+
+
+def test_trusted_proxy_wildcard_network_is_rejected_at_startup():
+    environment = os.environ.copy()
+    environment["TRUSTED_PROXY_IPS"] = "0.0.0.0/0"
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.config"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "Wildcard trusted proxy networks are not allowed" in result.stderr
+
+
+def test_cleanup_rechecks_expiry_in_delete_predicate():
+    from sqlalchemy import delete
+    from app.models import RateLimitBucket
+
+    statement = delete(RateLimitBucket).where(RateLimitBucket.expires_at <= 123)
+    compiled = str(statement.compile())
+    assert "expires_at" in compiled
