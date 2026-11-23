@@ -29,7 +29,8 @@ try:
         for value in _trusted_proxy_value.split(",")
         if value.strip()
     )
-    if any(network.prefixlen == 0 for network in TRUSTED_PROXY_NETWORKS):
-        raise ValueError("Wildcard trusted proxy networks are not allowed")
 except ValueError as exc:
     raise RuntimeError("TRUSTED_PROXY_IPS must contain valid IP addresses or CIDR networks") from exc
+
+if any(network.prefixlen == 0 for network in TRUSTED_PROXY_NETWORKS):
+    raise RuntimeError("Wildcard trusted proxy networks are not allowed")
