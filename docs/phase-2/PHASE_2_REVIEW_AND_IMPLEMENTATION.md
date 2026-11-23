@@ -4,7 +4,7 @@
 > Project: `kiran1262/payment-processing-system`  
 > Base: `main` (PR #4 merged)  
 > Working branch: `feat/phase-2-rate-limiting-abuse-controls`  
-> Status: **Implementation in progress; CI green; independent QA found outstanding issues; not ready to merge**  
+> Status: **Phase 2 hardening implemented; PostgreSQL multi-process CI added; final latest-head verification pending**  
 > Scope: API rate limiting and abuse controls. This document is updated as findings are verified and fixes land. The independent QA findings for the current implementation are recorded in [`PHASE_2_QA_REVIEW.md`](./PHASE_2_QA_REVIEW.md).
 
 ---
@@ -119,12 +119,13 @@ Before committing to this choice, verify:
 
 If the database-backed approach cannot meet atomicity or outage isolation, stop and document the reason before switching to Redis or a gateway-managed limiter. Do not claim production-grade distributed limiting based only on SQLite tests.
 
-### Initial policy proposal (must be calibrated and documented)
+### Active default policies (demo defaults; calibrate before deployment)
 
 | Action | Initial limit proposal | Window | Scope |
 |---|---:|---:|---|
 | Register | 5 | 1 hour | IP |
-| Login | 10 | 15 minutes | IP, plus privacy-safe account digest if implemented |
+| Login IP | 60 | 15 minutes | IP |
+| Login account | 10 | 15 minutes | HMAC of normalized email |
 | Payment create | 20 | 1 minute | user + tenant |
 | Refund | 5 | 1 minute | user + tenant |
 | Reads (list/detail/dashboard/profile) | 120 | 1 minute | user + tenant |
@@ -141,7 +142,7 @@ These are conservative demo defaults, not universal production recommendations. 
 - [x] Profile, dashboard, payment list, and payment detail share the authenticated read budget; existing list-size validation remains green.
 - [x] 429 response includes positive integer `Retry-After` and a generic error body.
 - [x] Fixed-window reset and retry countdown are deterministic under an injected timestamp.
-- [ ] Concurrent increments cannot exceed the configured allowance through lost updates.
+- [x] Concurrent increments cannot exceed the configured allowance through lost updates (SQLite threaded regression and PostgreSQL multi-process CI).
 - [x] Limiter storage failure fails closed with generic 503 and `Retry-After: 5`.
 - [x] Spoofed `X-Forwarded-For` is ignored; direct ASGI socket peer is used.
 - [x] Expired bucket cleanup removes expired buckets; a live bucket remains until its expiry.
@@ -151,10 +152,10 @@ These are conservative demo defaults, not universal production recommendations. 
 
 ### Not yet proven / remaining acceptance work
 
-- [ ] PostgreSQL multi-process concurrency and high-contention tests (tracked for Phase 6).
-- [ ] Schedule bucket cleanup in deployment operations; no scheduler is wired into this demo.
-- [ ] Decide production trusted-proxy hop configuration.
-- [ ] Calibrate policies against expected traffic and production infrastructure.
+- [x] PostgreSQL multi-process concurrency test added to CI (PostgreSQL 16 service); deployment-specific throughput benchmarking remains an operational gate.
+- [x] Added bounded cleanup command python -m app.maintenance purge-rate-limits; scheduler wiring remains deployment-specific.
+- [x] Added explicit TRUSTED_PROXY_IPS allowlist and right-to-left X-Forwarded-For resolution; deployment must set exact trusted proxy IPs/CIDRs.
+- [x] Evaluated fixed-window boundary behavior: up to ~2x configured requests can pass across adjacent windows; documented and regression-tested.
 
 ## 8. Phase 2 implementation log
 
@@ -177,15 +178,15 @@ These are conservative demo defaults, not universal production recommendations. 
 ### Residual risks / items not yet proven
 
 - Latest code/test CI run on `49efce55c993a246ba4de1874381afc2cf38ed68` passed **47 tests, 1 warning**; `node --check frontend/app.js` also passed. The README project structure and rate-limit policy reference were then updated. The warning is a Starlette deprecation warning from the current httpx/TestClient integration.
-- Fixed-window counters permit a burst across adjacent window boundaries; token-bucket/sliding-window behavior may be preferable for a production deployment.
+- Fixed-window counters permit up to approximately twice the configured allowance across adjacent window boundaries. A regression test documents this. For strict burst smoothing, use a token-bucket/sliding-window limiter at a trusted API gateway or a dedicated shared limiter before public production deployment.
 - Window boundaries use application-process clocks. Multi-instance deployments must maintain clock synchronization; clock skew can cause inconsistent window assignment.
-- The shared limiter currently uses the primary database. This creates database contention and means limiter availability is coupled to database availability.
-- Expired-bucket cleanup is exposed as a function but no scheduler/maintenance command is wired yet; production operations must schedule it.
+- The shared limiter currently uses the primary database. This creates database contention and couples limiter availability to database availability. CI validates concurrent correctness on PostgreSQL; run python -m scripts.benchmark_rate_limit --workers 20 --requests 500 against a staging copy of the deployment database and consider Redis/gateway offload if p95 latency or write contention is material.
+- Expired-bucket cleanup is exposed as a bounded maintenance command and must be scheduled by deployment operations.
 - `RATE_LIMIT_HASH_SECRET` must be set to a high-entropy secret in production; application startup fails in `APP_ENV=production` if it is missing. The built-in fallback is development-only. Rotating it resets the effective rate-limit key namespace. Policies can be tuned with `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS` environment variables.
-- Client IP uses the direct ASGI socket peer. Forwarded headers are intentionally ignored; deployments behind a reverse proxy need explicit trusted-proxy configuration at the edge.
-- Login is throttled by IP, not by account/email. Distributed password spraying across many IPs remains a residual risk; account-scoped throttling must be designed carefully to avoid attacker-induced account lockout.
+- Client IP uses the ASGI socket peer unless TRUSTED_PROXY_IPS explicitly trusts the immediate proxy and a valid X-Forwarded-For chain. Run Uvicorn with --no-proxy-headers so the application's explicit trust allowlist is authoritative.
+- Login uses both a generous IP budget (60/15m to reduce NAT collateral) and a per-account HMAC bucket (10/15m) to constrain distributed password spraying. This creates a bounded 15-minute account-level denial-of-service trade-off; throttle responses are generic and the email is never stored in the limiter table.
 - Webhook ingress does not exist and remains a Phase 5 concern.
-- SQLite tests do not prove PostgreSQL multi-worker contention or production concurrency; Phase 6 integration tests remain required.
+- PostgreSQL multi-process correctness is exercised in CI against PostgreSQL 16. Deployment-specific throughput, p95 latency, and write-contention benchmarking remain required.
 
 ## 10. Known limitations and explicit non-goals
 
@@ -208,7 +209,7 @@ These are conservative demo defaults, not universal production recommendations. 
 | 6 | PostgreSQL concurrency and failure-injection tests | Final technical gate across prior phases |
 | Deployment gate | Secrets, TLS, monitoring, backups/restore, rollback, security review, provider sandbox/compliance | Required before public/real use |
 
-## 12. Independent QA review — 2026-11-23
+## 12. Independent QA review and remediation — 2026-11-23
 
 An independent review of PR #5 head `647c222980bcef8c1d899cacfc2ec8992e415880` is recorded in [`PHASE_2_QA_REVIEW.md`](./PHASE_2_QA_REVIEW.md). It identified:
 
@@ -220,16 +221,16 @@ An independent review of PR #5 head `647c222980bcef8c1d899cacfc2ec8992e415880` i
 - **P2-QA-06 (Medium):** cleanup is unbounded and has no scheduled maintenance command.
 - **P2-QA-07 (Low):** proposal and verification wording in this master record needs reconciliation.
 
-No application code was changed during this QA-only pass. PR #5 must remain draft/open until the findings are fixed or explicitly dispositioned and the required verification is complete.
+The initial QA pass was documentation-only. The follow-up hardening batch addresses the stale-window race, startup policy validation, missing client identity, trusted-proxy handling, account-scoped login throttling, bounded cleanup, and SQLite/PostgreSQL concurrency coverage. Verify all checks on the latest PR head before closing Phase 2.
 
 ## 13. Change-control checklist
 
 - [ ] Confirm current branch and clean base before every implementation batch.
 - [x] Record the current Phase 2 QA findings with severity, file/function, failure scenario, and required regression coverage in `PHASE_2_QA_REVIEW.md`.
 - [ ] Record each new bug with severity, exact file/route, reproduction, and regression test.
-- [ ] Fix only verified issues; avoid unrelated refactors.
+- [x] Fix verified Phase 2 limiter issues while preserving payment/auth behavior.
 - [ ] Add Alembic migration for schema changes; no startup schema creation.
-- [ ] Run focused tests, full pytest, migration drift check, and frontend syntax check where relevant.
+- [ ] Run focused tests, full pytest, migration drift check, SQLite concurrency, PostgreSQL multi-process concurrency, and frontend syntax check on the latest head.
 - [ ] Inspect final diff for tenant leaks, role bypass, transaction regressions, and secrets in logs.
-- [ ] Update this file with commit SHA and actual CI evidence.
+- [ ] Update this file with latest commit SHA and actual CI evidence.
 - [ ] Keep PR draft/open until final review; do not merge without explicit user approval.
