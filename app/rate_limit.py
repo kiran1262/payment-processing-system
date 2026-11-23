@@ -92,7 +92,7 @@ def consume_rate_limit(
                 (incoming_is_newer, incoming_window),
                 else_=RateLimitBucket.window_start,
             ),
-            "request_count": __import__("sqlalchemy").case(
+            "request_count": case(
                 (incoming_is_newer, 1),
                 else_=RateLimitBucket.request_count + 1,
             ),
