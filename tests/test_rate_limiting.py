@@ -17,6 +17,7 @@ from app.proxy import resolve_forwarded_client_ip
 from app.rate_limit import (
     POLICIES,
     _bucket_digest,
+    login_network_identity,
     consume_rate_limit,
     purge_expired_rate_limit_buckets,
     rate_limit_ip,
@@ -428,3 +429,24 @@ engine.dispose()
         with engine.begin() as connection:
             connection.execute(delete(RateLimitBucket).where(RateLimitBucket.bucket_key == bucket_key))
         engine.dispose()
+
+
+def test_login_network_budget_limits_many_source_ips_in_one_prefix(client, monkeypatch):
+    monkeypatch.setitem(POLICIES, "login", (100, 900))
+    monkeypatch.setitem(POLICIES, "login_network", (1, 900))
+    monkeypatch.setitem(POLICIES, "login_account", (100, 900))
+    first = client.post("/api/auth/login", json={
+        "email": "first-target@example.com", "password": "wrong-password"
+    })
+    second = client.post("/api/auth/login", json={
+        "email": "second-target@example.com", "password": "wrong-password"
+    })
+    assert first.status_code == 401
+    assert second.status_code == 429
+
+
+def test_login_network_identity_uses_ipv4_24_and_ipv6_64_prefixes():
+    assert login_network_identity("198.51.100.10") == "network:198.51.100.0/24"
+    assert login_network_identity("198.51.100.240") == "network:198.51.100.0/24"
+    assert login_network_identity("2001:db8:abcd:12::1") == "network:2001:db8:abcd:12::/64"
+    assert login_network_identity("testclient") == "peer:testclient"
