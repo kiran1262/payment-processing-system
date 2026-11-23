@@ -149,7 +149,7 @@ The seven QA findings have now been addressed in application code on the PR #4 b
 ### Verification record
 
 - The first CI run exposed three failures: two migration metadata drift findings and a changed health response contract. The underlying causes were corrected without weakening tests.
-- The latest full GitHub Actions run passed on commit 8a846c0ef95d91c0cf0f241187dc24dad051d6ed.
+- The latest full GitHub Actions push run passed on commit edf1ad478d9ed38f0f60876a4f0041342ac88113. The frontend JavaScript syntax check also passed on commit 6036c87589f05c6fe1e059c56f397eb3b7a9f676.
 - Result: **30 passed, 1 warning**. The run includes authentication, expired/revoked sessions, owner/member authorization, cross-tenant access, tenant-scoped idempotency, migration preservation/schema drift, readiness success/failure, frontend retry-key persistence, UI-copy assertions, and the existing payment/refund suite.
 - Frontend coverage is source-level regression checking; a real browser end-to-end test has not yet been run.
 - PR #4 remains a draft. The implementation is ready for review, not merged. Keep it unmerged until you have reviewed the API/security behavior and decide to merge.
