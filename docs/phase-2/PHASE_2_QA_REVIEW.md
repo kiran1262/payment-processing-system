@@ -190,7 +190,7 @@ These tasks are not missing application code, but they are required before deplo
 ## 8. Vercel + Supabase deployment review
 
 The selected hosting target is Vercel with Supabase PostgreSQL. The branch now includes:
-- A Vercel FastAPI entrypoint and explicit inclusion of the frontend assets in the function bundle.
+- A root-level Vercel FastAPI entrypoint and explicit inclusion of the frontend assets in the function bundle.
 - Supabase transaction-pooler detection with SQLAlchemy `NullPool`, TLS required, and Psycopg automatic prepared statements disabled.
 - Vercel platform client-IP parsing; malformed/missing values fail closed instead of using a shared runtime IP.
 - A separate `MIGRATION_DATABASE_URL` for direct/session database migrations.
