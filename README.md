@@ -47,14 +47,35 @@ The application is intended for local learning. It now includes basic applicatio
 
 ## Run on Windows PowerShell
 
-    py -3.11 -m venv .venv
-    .\.venv\Scripts\Activate.ps1
-    python -m pip install --upgrade pip
-    pip install -r requirements.txt
-    alembic upgrade head
-    python -m uvicorn app.main:app --reload
+The commands below do **not** require virtual-environment activation. This avoids the common PowerShell execution-policy error that can block `Activate.ps1`.
 
-For macOS/Linux, activate the virtual environment with source .venv/bin/activate, then run the same pip, Alembic, and Uvicorn commands.
+    py -3.11 -m venv .venv
+    .\.venv\Scripts\python.exe -m pip install --upgrade pip
+    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+    .\.venv\Scripts\python.exe -m alembic upgrade head
+    .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+
+If the `py` launcher is not installed but Python 3.11+ is available on your PATH, create the environment with:
+
+    python -m venv .venv
+
+Then run the remaining commands using ` .\.venv\Scripts\python.exe ` as shown above (without the surrounding spaces).
+
+### Optional: activate the environment
+
+Activation is optional. If you prefer it, run:
+
+    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+    .\.venv\Scripts\Activate.ps1
+
+The execution-policy change applies only to the current PowerShell process. It does not change the machine-wide policy.
+
+For macOS/Linux, create and activate the environment with:
+
+    python3 -m venv .venv
+    source .venv/bin/activate
+
+Then install dependencies and run Alembic/Uvicorn with `python -m pip`, `python -m alembic`, and `python -m uvicorn` respectively.
 
 Open http://127.0.0.1:8000 for the dashboard and http://127.0.0.1:8000/docs for API docs.
 
@@ -62,21 +83,27 @@ Open http://127.0.0.1:8000 for the dashboard and http://127.0.0.1:8000/docs for 
 
 Alembic is the only schema-management path used by the application. Starting FastAPI no longer runs Base.metadata.create_all() or silently changes a database schema.
 
-- **New/empty database:** run alembic upgrade head before starting the application.
-- **Existing database created by the previous demo:** stop the application and make a verified backup first. Confirm that its payments table matches the initial migration (columns, types, nullability, primary/unique constraints, and indexes). Then run alembic stamp 0001_initial_schema to record the baseline without executing table-creation SQL, followed by alembic upgrade head. Migration `0002_tenants_auth` creates the legacy demo tenant and assigns every existing payment to it while replacing global idempotency uniqueness with tenant-scoped uniqueness. The stamp command does not inspect or repair the schema; do not run it against a database whose schema has not been verified.
+- **New/empty database (PowerShell):** run `.\.venv\Scripts\python.exe -m alembic upgrade head` before starting the application.
+- **Existing database created by the previous demo:** stop the application and make a verified backup first. Confirm that its payments table matches the initial migration (columns, types, nullability, primary/unique constraints, and indexes). Then run `.\.venv\Scripts\python.exe -m alembic stamp 0001_initial_schema` to record the baseline without executing table-creation SQL, followed by `.\.venv\Scripts\python.exe -m alembic upgrade head`. Migration `0002_tenants_auth` creates the legacy demo tenant and assigns every existing payment to it while replacing global idempotency uniqueness with tenant-scoped uniqueness. The stamp command does not inspect or repair the schema; do not run it against a database whose schema has not been verified.
 - **Deployment database:** set DATABASE_URL to the SQLAlchemy URL for the target database and run alembic upgrade head as an explicit deployment/release step before deploying application code. Keep the URL and credentials in the deployment secret manager; never commit credentials.
 - **Rollback:** inspect the target revision and backup before using alembic downgrade. A downgrade can remove schema objects and data. The initial migration downgrade drops the payments table and is destructive.
 
-Useful commands:
+Useful commands (Windows PowerShell):
 
-    alembic current
-    alembic history
-    alembic upgrade head
-    alembic check
+    .\.venv\Scripts\python.exe -m alembic current
+    .\.venv\Scripts\python.exe -m alembic history
+    .\.venv\Scripts\python.exe -m alembic upgrade head
+    .\.venv\Scripts\python.exe -m alembic check
 
 The application and Alembic both read DATABASE_URL. SQLite is the local default. The SQLAlchemy engine only applies SQLite-specific connection options to SQLite URLs.
 
 ## Run tests
+
+Windows PowerShell:
+
+    .\.venv\Scripts\python.exe -m pytest -v
+
+macOS/Linux (with the virtual environment activated):
 
     python -m pytest -v
 
