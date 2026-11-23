@@ -153,9 +153,10 @@ These are conservative demo defaults, not universal production recommendations. 
 
 | Date | Change | Tests / evidence | Status |
 |---|---|---|---|
-| 2026-11-23 | Created this master record and began source audit on a branch from merged Phase 1 `main`. | PR #4 verified merged; source inventory captured. | In progress |
+| 2026-11-23 | Created this master record and began source audit on a branch from merged Phase 1 `main`. | PR #4 verified merged; source inventory captured. | Complete |
+| 2026-11-23 | Added atomic fixed-window limiter using shared SQL database upserts, rate-limit bucket model/migration 0003, route dependencies, safe 429/503 behavior, frontend Retry-After guidance, and focused tests. | Code and tests committed on `feat/phase-2-rate-limiting-abuse-controls`; CI run pending. | In progress |
 
-## 9. Known limitations and explicit non-goals
+## 9. Current implementation details and residual review\n\n### Implemented in the working branch\n\n- Added `RateLimitBucket` model and Alembic revision `0003_rate_limit_buckets`.\n- Added `app/rate_limit.py` with atomic SQLite/PostgreSQL upsert counters, SHA-256 bucket-key digests, fixed windows, 429 responses with `Retry-After`, fail-closed 503 behavior when the limiter store is unavailable, and an explicit expired-bucket cleanup function.\n- Added policies: registration 5/hour/IP; login 10/15 minutes/IP; member creation 10/hour/user+tenant; payment creation 20/minute/user+tenant; refunds 5/minute/user+tenant; reads 120/minute/user+tenant.\n- Applied limits to registration, login, member creation, profile, dashboard, payment list/detail/create, and refund routes. Health and readiness probes remain exempt.\n- Frontend displays retry guidance for 429. Payment idempotency key remains in session storage after a rejected request.\n- Added tests for fixed-window enforcement/reset, hashed bucket identifiers, cleanup, login/IP throttling, forwarded-header spoof resistance, payment throttling, per-user isolation, read limits, and fail-closed storage errors.\n\n### Residual risks / items not yet proven\n\n- CI has not yet run on this branch; do not treat implementation as verified until tests and Alembic drift checks pass.\n- Fixed-window counters permit a burst across adjacent window boundaries; token-bucket/sliding-window behavior may be preferable for a production deployment.\n- The shared limiter currently uses the primary database. This creates database contention and means limiter availability is coupled to database availability.\n- Expired-bucket cleanup is exposed as a function but no scheduler/maintenance command is wired yet; production operations must schedule it.\n- Client IP uses the direct ASGI socket peer. Forwarded headers are intentionally ignored; deployments behind a reverse proxy need explicit trusted-proxy configuration at the edge.\n- Login is throttled by IP, not by account/email. Distributed password spraying across many IPs remains a residual risk; account-scoped throttling must be designed carefully to avoid attacker-induced account lockout.\n- Webhook ingress does not exist and remains a Phase 5 concern.\n- SQLite tests do not prove PostgreSQL multi-worker contention or production concurrency; Phase 6 integration tests remain required.\n\n## 10. Known limitations and explicit non-goals
 
 - No webhook endpoint in Phase 2; provider-specific ingress controls belong to Phase 5.
 - No real payment processing, card data, UPI credentials, or funds movement.
@@ -163,7 +164,7 @@ These are conservative demo defaults, not universal production recommendations. 
 - SQLite is suitable for local learning, not proof of production multi-instance concurrency.
 - No claim of production readiness until all phases and deployment/security gates are complete.
 
-## 10. Remaining project phases
+## 11. Remaining project phases
 
 | Phase | Scope | Dependency / status |
 |---|---|---|
@@ -176,7 +177,7 @@ These are conservative demo defaults, not universal production recommendations. 
 | 6 | PostgreSQL concurrency and failure-injection tests | Final technical gate across prior phases |
 | Deployment gate | Secrets, TLS, monitoring, backups/restore, rollback, security review, provider sandbox/compliance | Required before public/real use |
 
-## 11. Change-control checklist
+## 12. Change-control checklist
 
 - [ ] Confirm current branch and clean base before every implementation batch.
 - [ ] Record each new bug with severity, exact file/route, reproduction, and regression test.
