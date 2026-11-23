@@ -124,6 +124,7 @@ If the database-backed approach cannot meet atomicity or outage isolation, stop 
 |---|---:|---:|---|
 | Register | 5 | 1 hour | IP |
 | Login IP | 60 | 15 minutes | IP |
+| Login network | 100 | 15 minutes | IPv4 /24 or IPv6 /64 prefix (HMAC) |
 | Login account | 10 | 15 minutes | HMAC of normalized email |
 | Payment create | 20 | 1 minute | user + tenant |
 | Refund | 5 | 1 minute | user + tenant |
@@ -176,7 +177,7 @@ These are conservative demo defaults, not universal production recommendations. 
 - Added environment-configurable policies (defaults): registration 5/hour/IP; login IP 60/15 minutes and account 10/15 minutes (HMAC); member creation 10/hour/user+tenant; payment creation 20/minute/user+tenant; refunds 5/minute/user+tenant; reads 120/minute/user+tenant.
 - Applied limits to registration, login, member creation, profile, dashboard, payment list/detail/create, and refund routes. Health and readiness probes remain exempt.
 - Frontend displays retry guidance for 429. Payment idempotency key remains in session storage after a rejected request.
-- Added tests for fixed-window enforcement/reset and boundary bursts, monotonic stale-window behavior, HMAC account pseudonyms, bounded cleanup, trusted proxy chain resolution, missing peer handling, login IP/account throttling, registration/payment/refund/member-create/read limits, fail-closed storage errors, invalid environment policy rejection, SQLite concurrent increments, and PostgreSQL multi-process concurrency.
+- Added tests for fixed-window enforcement/reset and boundary bursts, monotonic stale-window behavior, HMAC account pseudonyms, bounded cleanup, trusted proxy chain resolution, missing peer handling, login IP/network/account throttling, registration/payment/refund/member-create/read limits, fail-closed storage errors, invalid environment policy rejection, SQLite concurrent increments, and PostgreSQL multi-process concurrency.
 
 ### Residual risks / items not yet proven
 
