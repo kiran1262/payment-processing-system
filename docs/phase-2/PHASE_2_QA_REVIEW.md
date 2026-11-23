@@ -191,7 +191,7 @@ These tasks are not missing application code, but they are required before deplo
 
 The selected hosting target is Vercel with Supabase PostgreSQL. The branch now includes:
 - A root-level Vercel FastAPI entrypoint and explicit inclusion of the frontend assets in the function bundle.
-- Supabase transaction-pooler detection with SQLAlchemy `NullPool`, TLS required, and Psycopg automatic prepared statements disabled.
+- Supabase transaction-pooler detection with a one-connection SQLAlchemy pool (`pool_size=1`, `max_overflow=0`, `pool_pre_ping=True`, and a five-minute recycle), TLS required, and Psycopg automatic prepared statements disabled.
 - Vercel platform client-IP parsing; malformed/missing values fail closed instead of using a shared runtime IP.
 - A separate `MIGRATION_DATABASE_URL` for direct/session database migrations.
 - A Supabase pg_cron SQL script for bounded expiry cleanup every ten minutes.
@@ -206,7 +206,7 @@ Operator setup is still pending: create the actual Supabase/Vercel projects, app
 CI run [45131302189](https://github.com/kiran1262/payment-processing-system/actions/runs/45131302189) on commit `aed28acf80445130cd25d8c5ca2b4ead52d91ed3` passed:
 - **67 pytest tests passed, 1 warning**.
 - Vercel client-IP parsing, per-IP isolation, and malformed-header fail-closed tests passed.
-- Supabase transaction-pooler `NullPool` selection passed.
+- Supabase transaction-pooler one-connection pool selection passed.
 - Root Vercel FastAPI entrypoint and frontend bundle configuration tests passed.
 - PostgreSQL 16 multi-process limiter test and benchmark passed.
 - Benchmark: 562.3 req/s, median 8.5 ms, p95 44.3 ms, max 52.8 ms (100 requests, 8 workers).
