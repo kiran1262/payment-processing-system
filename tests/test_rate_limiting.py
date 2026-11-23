@@ -175,3 +175,12 @@ def test_frontend_displays_retry_after_for_rate_limit_responses():
     source = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text()
     assert 'response.headers.get("Retry-After")' in source
     assert "Please retry in" in source
+
+
+
+def test_rate_limit_policy_can_be_configured_from_environment(monkeypatch):
+    from app.rate_limit import _policy
+
+    monkeypatch.setenv("RATE_LIMIT_REFUND_LIMIT", "2")
+    monkeypatch.setenv("RATE_LIMIT_REFUND_WINDOW_SECONDS", "120")
+    assert _policy("refund", 5, 60) == (2, 120)
