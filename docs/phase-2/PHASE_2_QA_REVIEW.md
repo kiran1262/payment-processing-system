@@ -13,19 +13,19 @@
 
 The Phase 2 implementation has a sound starting structure: route-level FastAPI dependencies, a shared SQL database counter table, SQLite/PostgreSQL dialect upserts, HMAC-pseudonymized bucket keys, 429 responses, fail-closed storage errors, and environment-configurable policies.
 
-The previously reported CI result is **47 pytest tests passed, 1 warning**, with `node --check frontend/app.js` passing. This is not sufficient evidence for all acceptance criteria: concurrency is explicitly unchecked, PostgreSQL is not exercised, and the current fixed-window upsert has a stale-window race.
+The original review snapshot was at commit `647c222980bcef8c1d899cacfc2ec8992e415880` with 47 tests. The follow-up implementation was verified on code commit `d1eba7c9e804d2ef1bb1a9d954189427478e926b`: **61 pytest tests passed, 1 warning**, PostgreSQL multi-process concurrency passed, a PostgreSQL contention smoke benchmark passed, and `node --check frontend/app.js` passed.
 
 ### Findings at a glance
 
 | ID | Severity | Finding | Status |
 |---|---|---|---|
-| P2-QA-01 | High | A delayed request from an older window can move a bucket backwards and undermine the newer window's counter | Needs fix + regression test |
-| P2-QA-02 | Medium | Zero/negative environment policy values cause an unhandled `ValueError` during requests | Needs fix + config tests |
-| P2-QA-03 | Medium | Missing ASGI client address collapses all callers into one shared `unknown` IP bucket | Needs explicit safe behavior + test |
-| P2-QA-04 | Medium | Login is only IP-throttled: NAT users can block each other, while distributed attempts can evade the limit | Risk decision / design improvement |
-| P2-QA-05 | High | Concurrent upsert behavior and PostgreSQL behavior are not covered by automated tests | Verification blocker |
-| P2-QA-06 | Medium | Cleanup is an unbounded delete on the primary database and has no operational scheduler/command | Operational hardening |
-| P2-QA-07 | Low | Master document still contains stale/inconsistent proposal and verification wording | Documentation correction |
+| P2-QA-01 | High | A delayed request from an older window can move a bucket backwards and undermine the newer window's counter | Addressed; monotonic upsert + regression test |
+| P2-QA-02 | Medium | Zero/negative environment policy values cause an unhandled `ValueError` during requests | Addressed; startup validation + subprocess tests |
+| P2-QA-03 | Medium | Missing ASGI client address collapses all callers into one shared `unknown` IP bucket | Addressed; generic 503 + regression test |
+| P2-QA-04 | Medium | Login is only IP-throttled: NAT users can block each other, while distributed attempts can evade the limit | Addressed with IP, network-prefix, and account budgets; sophisticated botnets remain a risk |
+| P2-QA-05 | High | Concurrent upsert behavior and PostgreSQL behavior are not covered by automated tests | Addressed; SQLite threads + four PostgreSQL processes in CI |
+| P2-QA-06 | Medium | Cleanup is an unbounded delete on the primary database and has no operational scheduler/command | Addressed in code and deployment templates; host activation required |
+| P2-QA-07 | Low | Master document still contains stale/inconsistent proposal and verification wording | Addressed in master record, README, and roadmap |
 
 Severity is about the risk to the current educational application, not a claim that the demo is production-ready.
 
@@ -276,7 +276,7 @@ Do not weaken these behaviors while addressing the findings.
 
 ---
 
-## 5. Required fix and verification order
+## 5. Initial remediation checklist (completed; evidence in section 7)
 
 1. **Fix P2-QA-01** — monotonic window update and stale-window regression tests.
 2. **Fix P2-QA-02** — validate all environment policy values before serving requests.
@@ -292,11 +292,7 @@ Do not weaken these behaviors while addressing the findings.
 
 ## 6. Current QA decision
 
-**PR #5 should remain draft/open. Do not merge based only on the existing 47-test green CI run.**
-
-The highest-priority code issue is the stale-window race in `consume_rate_limit`. The next priority is configuration validation. The concurrency/PostgreSQL acceptance gap must be closed or formally retained as a mandatory later gate with no production-readiness claim.
-
-This review does not change application code. Findings are recorded for the next implementation pass.
+The follow-up hardening code passed 61 tests and the PostgreSQL multi-process concurrency and contention smoke steps on code commit `d1eba7c9e804d2ef1bb1a9d954189427478e926b`. PR #5 remains draft/open pending the latest documentation-only commit CI result and the deployment operator's proxy/scheduler configuration. Do not describe the demo as production-ready: fixed-window boundary bursts, primary-database contention, account-throttle denial-of-service trade-offs, and large botnet risk remain documented limitations.
 
 ## 7. Follow-up remediation status
 
@@ -317,4 +313,4 @@ This review does not change application code. Findings are recorded for the next
 - Database contention: run python -m scripts.benchmark_rate_limit --workers 20 --requests 500 against a staging database using the same DB engine and worker topology. Compare p50/p95 with the API latency budget; use a dedicated limiter if primary DB write contention is material.
 - Fixed-window boundary burst: a limit of N can allow up to roughly 2N in a short interval spanning a boundary. This is tested and documented; strict burst smoothing requires token bucket/sliding window at a trusted gateway or a dedicated limiter.
 - Password spraying: account-level HMAC throttling constrains distributed attempts but creates a bounded temporary lockout/denial-of-service trade-off. Generic responses reduce account enumeration. This is not a substitute for MFA, breached-password detection, bot controls, or anomaly monitoring.
-- PostgreSQL multi-worker: CI starts PostgreSQL 16 and launches four independent Python processes against one shared bucket; exactly the configured number of requests must be allowed while all increments are retained.
+- PostgreSQL multi-worker: CI starts PostgreSQL 16 and launches four independent Python processes against one shared bucket; exactly 50 of 100 requests are allowed while all 100 increments are retained. The CI smoke benchmark also ran 100 requests with 8 threads.
