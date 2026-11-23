@@ -12,7 +12,7 @@ import os
 from time import time
 
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy import case, delete, select
+from sqlalchemy import case, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,6 +22,7 @@ from .auth import get_current_user
 from .config import RATE_LIMIT_HASH_SECRET
 from .database import get_db
 from .models import RateLimitBucket, User
+
 
 def _policy(name: str, default_limit: int, default_window: int) -> tuple[int, int]:
     """Read action policy from environment while retaining safe local defaults."""
