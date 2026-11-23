@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from hashlib import sha256
@@ -20,7 +21,7 @@ from .models import AuthSession, Payment, Tenant, User
 from .schemas import LoginRequest, MemberCreate, PaymentCreate, RegisterRequest
 from .services import IdempotencyConflictError, create_payment, dashboard_stats, refund_payment
 from .rate_limit import enforce_rate_limit, login_network_identity, rate_limit_ip, rate_limit_user
-from .proxy import resolve_forwarded_client_ip
+from .proxy import resolve_forwarded_client_ip, resolve_vercel_client_ip
 from .config import TRUSTED_PROXY_NETWORKS
 
 logger = logging.getLogger(__name__)
@@ -31,12 +32,25 @@ app.mount("/static", StaticFiles(directory=BASE / "frontend"), name="static")
 
 @app.middleware("http")
 async def trusted_proxy_middleware(request, call_next):
-    """Honor X-Forwarded-For only when the immediate peer is explicitly trusted."""
+    """Resolve client IPs using the active hosting platform's trust boundary."""
     peer = request.client
+
+    # Vercel documents that it overwrites X-Forwarded-For with the public client
+    # IP. Do not apply the self-hosted TRUSTED_PROXY_IPS list to Vercel's proxy.
+    if os.environ.get("VERCEL") == "1":
+        resolved = resolve_vercel_client_ip(request.headers.get("x-forwarded-for"))
+        if resolved is None:
+            # Public IP rate limits must fail closed rather than share a runtime IP.
+            request.scope["client"] = None
+        else:
+            request.scope["client"] = (resolved, peer.port if peer else 0)
+        return await call_next(request)
+
+    # For self-hosted deployments, trust forwarded headers only from an explicitly
+    # configured immediate proxy. Uvicorn proxy-header parsing stays disabled.
     if peer is not None and TRUSTED_PROXY_NETWORKS:
-        forwarded_for = request.headers.get("x-forwarded-for")
         resolved = resolve_forwarded_client_ip(
-            peer.host, forwarded_for, TRUSTED_PROXY_NETWORKS
+            peer.host, request.headers.get("x-forwarded-for"), TRUSTED_PROXY_NETWORKS
         )
         if resolved != peer.host:
             request.scope["client"] = (resolved, peer.port)
