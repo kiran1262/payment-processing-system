@@ -52,6 +52,37 @@ def create_tenant_owner(db: Session, tenant_name: str, full_name: str, email: st
     token, expires_at = issue_session(db, user)
     return tenant, user, token, expires_at
 
+def bootstrap_legacy_owner(db: Session, full_name: str, email: str, password: str) -> User:
+    """Create the first owner of the migration-created legacy workspace.
+
+    This is deliberately a local administrative operation, never an HTTP endpoint.
+    It refuses to proceed if the expected workspace is absent or already has users.
+    """
+    tenant = db.get(Tenant, 1)
+    if tenant is None or tenant.name != "Legacy demo workspace":
+        raise ValueError("The Legacy demo workspace was not found; verify migration 0002.")
+    existing_user = db.scalar(select(User).where(User.tenant_id == tenant.id).limit(1))
+    if existing_user is not None:
+        raise ValueError("The legacy workspace already has an account; bootstrap is one-time only.")
+    normalized_email = email.strip().lower()
+    if not normalized_email or not full_name.strip() or not password:
+        raise ValueError("Name, email, and password are required.")
+    user = User(
+        tenant_id=tenant.id,
+        full_name=full_name.strip(),
+        email=normalized_email,
+        password_hash=hash_password(password),
+        role="owner",
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise
+    db.refresh(user)
+    return user
+
 def _utc(value: datetime):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
