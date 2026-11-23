@@ -171,8 +171,8 @@ The second full-project review identified four residual application issues after
 
 ### Updated verification
 
-- GitHub Actions push run for commit `a0cb1b00c2e9df342b95d150fe489a83a5375344`: **success**.
-- Pytest result: **33 passed, 1 warning**.
+- GitHub Actions push run for commit `ce04b73a3c33d77bdd775453d14ec2eaadb3cecf`: **success**.
+- Pytest result: **34 passed, 1 warning**.
 - The warning is a Starlette deprecation warning about using `httpx` with `starlette.testclient`; it does not fail the suite.
 - Browser-level end-to-end testing remains outstanding. CI currently runs pytest only.
 - PR #4 remains a draft and has not been merged. This implementation is still an educational payment simulation, not a production payment gateway.
