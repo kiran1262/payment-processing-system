@@ -113,6 +113,25 @@ macOS/Linux (with the virtual environment activated):
 
 The migration tests cover a fresh database upgrade, schema drift against ORM metadata, and baselining an existing demo schema while preserving its payment row.
 
+## API rate limits
+
+Phase 2 uses atomic, database-backed fixed-window counters shared by application workers that use the same database. Public registration and login limits use the direct socket peer IP. Authenticated limits use the verified tenant and user IDs.
+
+| Action | Default limit | Window | Scope |
+|---|---:|---:|---|
+| Registration | 5 | 1 hour | IP |
+| Login | 10 | 15 minutes | IP |
+| Member creation | 10 | 1 hour | User + tenant |
+| Payment creation | 20 | 1 minute | User + tenant |
+| Refund | 5 | 1 minute | User + tenant |
+| Authenticated reads | 120 | 1 minute | User + tenant |
+
+A blocked request returns HTTP `429` with an integer `Retry-After` header. If the limiter storage is unavailable, the API fails closed with a generic HTTP `503`. Liveness and readiness probes are exempt. Forwarded IP headers are ignored; if deployed behind a reverse proxy, configure trusted proxy handling at the deployment edge rather than accepting arbitrary client-supplied headers.
+
+Tune policies using `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS`, where ACTION is `REGISTER`, `LOGIN`, `MEMBER_CREATE`, `PAYMENT_CREATE`, `REFUND`, or `READ`. In production set `APP_ENV=production` and provide a high-entropy `RATE_LIMIT_HASH_SECRET` through the deployment secret manager. Startup fails if the production secret is missing. The development fallback must not be used in production.
+
+Expired bucket cleanup is exposed as `purge_expired_rate_limit_buckets` in `app/rate_limit.py`; schedule it as an operational maintenance task before public deployment. Fixed-window limits can allow bursts across adjacent window boundaries and require synchronized application clocks. PostgreSQL multi-worker concurrency validation remains a later project gate.
+
 ## API endpoints
 
 | Method | Endpoint | Purpose |
