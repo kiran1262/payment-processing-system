@@ -34,7 +34,7 @@ def home():
 @app.get("/api/health")
 def health():
     """Liveness only: confirms that the process can answer HTTP."""
-    return {"status": "alive", "service": "Payment demo"}
+    return {"status": "healthy", "probe": "liveness", "service": "Payment demo"}
 
 
 @app.get("/api/ready")
