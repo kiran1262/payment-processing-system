@@ -4,7 +4,7 @@
 > Project: `kiran1262/payment-processing-system`  
 > Base: `main` (PR #4 merged)  
 > Working branch: `feat/phase-2-rate-limiting-abuse-controls`  
-> Status: **Implementation in progress; CI green; final review pending**  
+> Status: **Implementation in progress; latest CI green; final review pending**  
 > Scope: API rate limiting and abuse controls. This document is updated as findings are verified and fixes land.
 
 ---
@@ -161,7 +161,7 @@ These are conservative demo defaults, not universal production recommendations. 
 | Date | Change | Tests / evidence | Status |
 |---|---|---|---|
 | 2026-11-23 | Created this master record and began source audit on a branch from merged Phase 1 `main`. | PR #4 verified merged; source inventory captured. | Complete |
-| 2026-11-23 | Added atomic fixed-window limiter using shared SQL database upserts, rate-limit bucket model/migration 0003, route dependencies, safe 429/503 behavior, frontend Retry-After guidance, and focused tests. | Initial CI run: 41 passed; expanded route coverage, HMAC identity pseudonymization, and frontend syntax CI check added afterward. Latest run pending. | In progress |
+| 2026-11-23 | Added atomic fixed-window limiter using shared SQL database upserts, rate-limit bucket model/migration 0003, route dependencies, safe 429/503 behavior, frontend Retry-After guidance, and focused tests. | Latest head `8742df5e2e1166cc887cfec971ffb47acbf21f96`: **46 passed, 1 warning**; frontend `node --check` passed. | In progress |
 
 ## 9. Current implementation details and residual review
 
@@ -169,14 +169,14 @@ These are conservative demo defaults, not universal production recommendations. 
 
 - Added `RateLimitBucket` model and Alembic revision `0003_rate_limit_buckets`.
 - Added `app/rate_limit.py` with atomic SQLite/PostgreSQL upsert counters, HMAC-SHA256 bucket-key pseudonyms (keyed by `RATE_LIMIT_HASH_SECRET`), fixed windows, 429 responses with `Retry-After`, fail-closed 503 behavior when the limiter store is unavailable, and an explicit expired-bucket cleanup function.
-- Added policies: registration 5/hour/IP; login 10/15 minutes/IP; member creation 10/hour/user+tenant; payment creation 20/minute/user+tenant; refunds 5/minute/user+tenant; reads 120/minute/user+tenant.
+- Added environment-configurable policies (defaults): registration 5/hour/IP; login 10/15 minutes/IP; member creation 10/hour/user+tenant; payment creation 20/minute/user+tenant; refunds 5/minute/user+tenant; reads 120/minute/user+tenant.
 - Applied limits to registration, login, member creation, profile, dashboard, payment list/detail/create, and refund routes. Health and readiness probes remain exempt.
 - Frontend displays retry guidance for 429. Payment idempotency key remains in session storage after a rejected request.
-- Added tests for fixed-window enforcement/reset, hashed bucket identifiers, cleanup, login/IP throttling, forwarded-header spoof resistance, payment throttling, per-user isolation, read limits, and fail-closed storage errors.
+- Added tests for fixed-window enforcement/reset, HMAC bucket pseudonyms, cleanup, login/IP throttling (including failed attempts and forwarded-header spoof resistance), registration, payment/refund/member-create limits, per-user isolation, read limits, fail-closed storage errors, environment policy configuration, and frontend retry guidance.
 
 ### Residual risks / items not yet proven
 
-- GitHub Actions passed **45 tests, 1 warning** on code/test commit `9bc3984559092183cc3e4a83f105a4108601c308`; the later PR-head commit `f5f95b7098c4c3d6280cb1b730af86eeb08e15f3` also passed 45 tests and `node --check frontend/app.js`. The warning is a Starlette deprecation warning from the current httpx/TestClient integration.
+- Latest GitHub Actions run on `8742df5e2e1166cc887cfec971ffb47acbf21f96` passed **46 tests, 1 warning**; `node --check frontend/app.js` also passed. The warning is a Starlette deprecation warning from the current httpx/TestClient integration.
 - Fixed-window counters permit a burst across adjacent window boundaries; token-bucket/sliding-window behavior may be preferable for a production deployment.
 - Window boundaries use application-process clocks. Multi-instance deployments must maintain clock synchronization; clock skew can cause inconsistent window assignment.
 - The shared limiter currently uses the primary database. This creates database contention and means limiter availability is coupled to database availability.
