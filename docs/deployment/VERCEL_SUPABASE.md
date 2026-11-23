@@ -46,7 +46,7 @@ For a new Supabase project, `upgrade head` creates the schema. Do not stamp an e
 1. Push this branch to GitHub.
 2. In Vercel, import the repository `kiran1262/payment-processing-system`.
 3. Set the project root directory to the repository root.
-4. Let Vercel detect the Python/FastAPI application. The `api/index.py` entrypoint exports the existing `app.main:app` application.
+4. Let Vercel detect the Python/FastAPI application. The root `main.py` entrypoint exports the existing `app.main:app` application, so FastAPI receives the full request path (including the dashboard root and all API routes).
 5. `vercel.json` explicitly includes `frontend/**` in the Python Function bundle because the application serves those files through `StaticFiles` and `FileResponse`.
 6. Deploy a Preview first. Do not promote it to Production until the checklist below passes.
 
