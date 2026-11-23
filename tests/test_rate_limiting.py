@@ -537,4 +537,4 @@ def test_vercel_config_includes_frontend_files_in_function_bundle():
     from pathlib import Path
 
     config = json.loads((Path(__file__).resolve().parents[1] / "vercel.json").read_text())
-    assert config["functions"]["api/index.py"]["includeFiles"] == "frontend/**"
+    assert config["functions"]["main.py"]["includeFiles"] == "frontend/**"
