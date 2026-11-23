@@ -99,7 +99,7 @@ Useful commands (Windows PowerShell):
     .\.venv\Scripts\python.exe -m alembic upgrade head
     .\.venv\Scripts\python.exe -m alembic check
 
-The application and Alembic both read DATABASE_URL. SQLite is the local default. The SQLAlchemy engine only applies SQLite-specific connection options to SQLite URLs.
+The application and Alembic both read DATABASE_URL. SQLite is the local default. The SQLAlchemy engine only applies SQLite-specific connection options to SQLite URLs. Rate-limit identity keys use HMAC-SHA256; set `RATE_LIMIT_HASH_SECRET` to a high-entropy secret through the deployment secret manager outside local development. The built-in fallback is development-only.
 
 ## Run tests
 
