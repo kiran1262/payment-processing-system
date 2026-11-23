@@ -252,7 +252,7 @@ The deployment target selected for this project is **Vercel + Supabase PostgreSQ
 Deployment-specific changes added on the Phase 2 branch:
 - `main.py` exports the existing FastAPI application for Vercel's Python runtime.
 - `vercel.json` explicitly includes `frontend/**` in the function bundle because FastAPI serves those assets.
-- `app/database.py` detects Supabase's shared transaction pooler on port 6543 and uses SQLAlchemy `NullPool`, TLS, and disabled Psycopg automatic prepared statements.
+- `app/database.py` detects Supabase's shared transaction pooler on port 6543 and uses a one-connection SQLAlchemy pool (`pool_size=1`, `max_overflow=0`, `pool_pre_ping=True`, and a five-minute recycle), TLS, and disabled Psycopg automatic prepared statements.
 - `app/proxy.py` and `app/main.py` use Vercel's documented platform-overwritten `X-Forwarded-For` client IP when `VERCEL=1`. Missing or malformed values fail closed for public IP-limited routes. Self-hosted proxy allowlisting remains unchanged.
 - `alembic/env.py` accepts `MIGRATION_DATABASE_URL` so schema migrations can use a direct/session connection instead of the serverless transaction pooler.
 - `supabase/cron/purge_rate_limit_buckets.sql` schedules an expiry cleanup of at most 1,000 rows every ten minutes using Supabase pg_cron.
