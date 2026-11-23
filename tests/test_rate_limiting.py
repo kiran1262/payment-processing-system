@@ -466,3 +466,60 @@ def test_trusted_proxy_wildcard_network_is_rejected_at_startup():
     assert result.returncode != 0
     assert "Wildcard trusted proxy networks are not allowed" in result.stderr
 
+
+
+def test_vercel_client_ip_parser_accepts_only_one_valid_ip():
+    from app.proxy import resolve_vercel_client_ip
+
+    assert resolve_vercel_client_ip("198.51.100.42") == "198.51.100.42"
+    assert resolve_vercel_client_ip("2001:db8::42") == "2001:db8::42"
+    assert resolve_vercel_client_ip(None) is None
+    assert resolve_vercel_client_ip("not-an-ip") is None
+    assert resolve_vercel_client_ip("198.51.100.1, 203.0.113.2") is None
+
+
+def test_vercel_middleware_uses_platform_client_ip_for_rate_limits(client, monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setitem(POLICIES, "login", (1, 900))
+    monkeypatch.setitem(POLICIES, "login_network", (100, 900))
+    monkeypatch.setitem(POLICIES, "login_account", (100, 900))
+
+    credentials = {"email": "first@example.com", "password": "wrong-password"}
+    first = client.post(
+        "/api/auth/login",
+        json=credentials,
+        headers={"X-Forwarded-For": "198.51.100.10"},
+    )
+    second = client.post(
+        "/api/auth/login",
+        json={**credentials, "email": "second@example.com"},
+        headers={"X-Forwarded-For": "203.0.113.10"},
+    )
+
+    # Different platform-supplied client IPs must not share the same IP bucket.
+    assert first.status_code == 401
+    assert second.status_code == 401
+
+
+def test_vercel_middleware_fails_closed_for_missing_or_malformed_client_ip(client, monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "owner@example.com", "password": "wrong-password"},
+        headers={"X-Forwarded-For": "not-an-ip"},
+    )
+    assert response.status_code == 503
+    assert "Client network identity unavailable" in response.text
+
+
+def test_supabase_transaction_pooler_uses_null_pool():
+    from sqlalchemy.pool import NullPool
+    from app.database import create_application_engine
+
+    engine = create_application_engine(
+        "postgresql+psycopg://demo:password@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
+    )
+    try:
+        assert isinstance(engine.pool, NullPool)
+    finally:
+        engine.dispose()
