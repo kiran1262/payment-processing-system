@@ -101,6 +101,10 @@ Useful commands (Windows PowerShell):
 
 The application and Alembic both read DATABASE_URL. SQLite is the local default. The SQLAlchemy engine only applies SQLite-specific connection options to SQLite URLs. Rate-limit identity keys use HMAC-SHA256; set `RATE_LIMIT_HASH_SECRET` to a high-entropy secret through the deployment secret manager outside local development. Set TRUSTED_PROXY_IPS to comma-separated exact proxy IPs or CIDR ranges. Startup fails when `APP_ENV=production` and the secret is missing. The built-in fallback is development-only. Tune action policies with `RATE_LIMIT_<ACTION>_LIMIT` and `RATE_LIMIT_<ACTION>_WINDOW_SECONDS` (actions: `REGISTER`, `LOGIN`, `LOGIN_NETWORK`, `LOGIN_ACCOUNT`, `MEMBER_CREATE`, `PAYMENT_CREATE`, `REFUND`, `READ`).
 
+## Vercel + Supabase deployment
+
+This branch includes a Vercel FastAPI entrypoint, Supabase transaction-pooler connection handling, Vercel client-IP resolution for rate limiting, and a Supabase pg_cron cleanup script. Follow the [Vercel + Supabase deployment guide](docs/deployment/VERCEL_SUPABASE.md) for project setup, environment variables, Alembic migration steps, scheduled cleanup, and verification. Do not deploy publicly or use real payment credentials; this project remains an educational simulation.
+
 ## Run tests
 
 Windows PowerShell:
