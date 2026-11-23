@@ -195,7 +195,7 @@ Use a unique password, do not commit it, and run this only on a trusted machine 
 
 Before any real payment integration or public deployment:
 
-- Harden and operationalize shared-store API rate limiting (trusted proxy configuration, bucket cleanup scheduling, production load/concurrency validation).
+- Complete deployment-specific activation and validation for Phase 2 rate limiting (trusted proxy allowlist, cleanup scheduler, target-database load benchmark, and monitoring). The application implementation and PostgreSQL CI concurrency checks are in PR #5.
 - Add durable, append-only audit logging for sensitive business actions.
 - Implement a balanced double-entry ledger and reconciliation.
 - Integrate an authorized payment service provider using its official SDK and sandbox.
