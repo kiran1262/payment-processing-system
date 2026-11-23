@@ -1,22 +1,28 @@
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
+from hashlib import sha256
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from .auth import (
+    bearer_scheme, create_tenant_owner, get_current_user, hash_password,
+    issue_session, require_owner, token_digest, verify_password,
+)
 from .database import get_db
-from .models import Payment
-from .schemas import PaymentCreate
+from .models import AuthSession, Payment, User
+from .schemas import LoginRequest, MemberCreate, PaymentCreate, RegisterRequest
 from .services import IdempotencyConflictError, create_payment, dashboard_stats, refund_payment
 
 logger = logging.getLogger(__name__)
 BASE = Path(__file__).resolve().parent.parent
-
-app = FastAPI(title="Payment Processing System", version="1.1.0")
+app = FastAPI(title="Payment Processing System", version="1.2.0")
 app.mount("/static", StaticFiles(directory=BASE / "frontend"), name="static")
 
 
@@ -27,78 +33,165 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return {"status": "healthy", "service": "Payment"}
+    """Liveness only: confirms that the process can answer HTTP."""
+    return {"status": "alive", "service": "Payment demo"}
+
+
+@app.get("/api/ready")
+def readiness(db: Session = Depends(get_db)):
+    """Readiness: confirms the configured database can answer a simple query."""
+    try:
+        db.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        logger.warning("Readiness check failed: database unavailable")
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    return {"status": "ready", "database": "available"}
+
+
+@app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    try:
+        tenant, user, token, expires_at = create_tenant_owner(
+            db, payload.tenant_name, payload.full_name, str(payload.email), payload.password
+        )
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An account with this email already exists") from exc
+    return {
+        "access_token": token, "token_type": "bearer", "expires_at": expires_at.isoformat(),
+        "tenant": {"id": tenant.id, "name": tenant.name}, "user": user_json(user),
+    }
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
+    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, "Invalid email or password", headers={"WWW-Authenticate": "Bearer"})
+    token, expires_at = issue_session(db, user)
+    return {
+        "access_token": token, "token_type": "bearer", "expires_at": expires_at.isoformat(),
+        "tenant": {"id": user.tenant_id}, "user": user_json(user),
+    }
+
+
+@app.get("/api/auth/me")
+def me(user: User = Depends(get_current_user)):
+    return user_json(user)
+
+
+@app.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    session = db.scalar(select(AuthSession).where(
+        AuthSession.token_hash == token_digest(credentials.credentials),
+        AuthSession.user_id == user.id,
+    ))
+    if session and session.revoked_at is None:
+        session.revoked_at = datetime.now(timezone.utc)
+        db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/api/tenant/members", status_code=status.HTTP_201_CREATED)
+def create_member(
+    payload: MemberCreate,
+    owner: User = Depends(require_owner),
+    db: Session = Depends(get_db),
+):
+    member = User(
+        tenant_id=owner.tenant_id, full_name=payload.full_name.strip(),
+        email=str(payload.email).lower(), password_hash=hash_password(payload.password),
+        role="member",
+    )
+    db.add(member)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "An account with this email already exists") from exc
+    db.refresh(member)
+    return user_json(member)
 
 
 @app.get("/api/dashboard")
-def dashboard(db: Session = Depends(get_db)):
-    return dashboard_stats(db)
+def dashboard(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return dashboard_stats(db, user.tenant_id)
 
 
 @app.get("/api/payments")
 def list_payments(
     limit: int = Query(default=100, ge=1, le=250),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    rows = db.scalars(select(Payment).order_by(Payment.id.desc()).limit(limit)).all()
+    rows = db.scalars(select(Payment).where(Payment.tenant_id == user.tenant_id)
+        .order_by(Payment.id.desc()).limit(limit)).all()
     return [payment_json(payment) for payment in rows]
 
 
 @app.post("/api/payments", status_code=201)
 def new_payment(
     payload: PaymentCreate,
-    idempotency_key: str | None = Header(
-        default=None, alias="Idempotency-Key", min_length=1, max_length=100
-    ),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=1, max_length=100),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     try:
-        payment, replayed = create_payment(db, payload, idempotency_key)
+        payment, replayed = create_payment(db, payload, idempotency_key, user.tenant_id)
         return {**payment_json(payment), "idempotent_replay": replayed}
     except IdempotencyConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(409, detail=str(exc)) from exc
     except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("Database error while creating payment")
-        raise HTTPException(status_code=500, detail="Payment could not be processed.") from exc
+        raise HTTPException(500, detail="Payment could not be processed.") from exc
     except Exception as exc:
         db.rollback()
         logger.exception("Unexpected error while creating payment")
-        raise HTTPException(status_code=500, detail="An internal error occurred.") from exc
+        raise HTTPException(500, detail="An internal error occurred.") from exc
 
 
 @app.get("/api/payments/{payment_id}")
-def get_payment(payment_id: str, db: Session = Depends(get_db)):
-    payment = db.scalar(select(Payment).where(Payment.payment_id == payment_id))
-    if not payment:
-        raise HTTPException(status_code=404, detail="Payment not found")
+def get_payment(payment_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    payment = db.scalar(select(Payment).where(
+        Payment.payment_id == payment_id, Payment.tenant_id == user.tenant_id
+    ))
+    if payment is None:
+        raise HTTPException(404, detail="Payment not found")
     return payment_json(payment)
 
 
 @app.post("/api/payments/{payment_id}/refund")
-def refund(payment_id: str, db: Session = Depends(get_db)):
-    payment = db.scalar(select(Payment).where(Payment.payment_id == payment_id))
-    if not payment:
-        raise HTTPException(status_code=404, detail="Payment not found")
+def refund(payment_id: str, owner: User = Depends(require_owner), db: Session = Depends(get_db)):
+    payment = db.scalar(select(Payment).where(
+        Payment.payment_id == payment_id, Payment.tenant_id == owner.tenant_id
+    ))
+    if payment is None:
+        raise HTTPException(404, detail="Payment not found")
     try:
-        return payment_json(refund_payment(db, payment))
+        return payment_json(refund_payment(db, payment, owner.tenant_id))
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(409, detail=str(exc)) from exc
     except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("Database error while refunding payment %s", payment_id)
-        raise HTTPException(status_code=500, detail="Refund could not be processed.") from exc
+        raise HTTPException(500, detail="Refund could not be processed.") from exc
+
+
+def user_json(user: User):
+    return {"id": user.id, "tenant_id": user.tenant_id, "full_name": user.full_name,
+            "email": user.email, "role": user.role}
 
 
 def payment_json(payment: Payment):
     return {
-        "payment_id": payment.payment_id,
-        "customer_name": payment.customer_name,
-        "customer_email": payment.customer_email,
-        "amount": payment.amount_paise / 100,
-        "currency": payment.currency,
-        "method": payment.method,
-        "status": payment.status,
+        "payment_id": payment.payment_id, "customer_name": payment.customer_name,
+        "customer_email": payment.customer_email, "amount": payment.amount_paise / 100,
+        "currency": payment.currency, "method": payment.method, "status": payment.status,
         "description": payment.description,
         "created_at": payment.created_at.isoformat() if payment.created_at else None,
     }
