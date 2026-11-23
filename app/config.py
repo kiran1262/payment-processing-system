@@ -1,3 +1,4 @@
+import ipaddress
 import os
 from pathlib import Path
 
@@ -20,7 +21,6 @@ RATE_LIMIT_HASH_SECRET = _configured_rate_limit_secret or "local-development-onl
 
 # Comma-separated trusted reverse-proxy IP addresses or CIDR networks.
 # Empty by default: forwarded headers are ignored unless explicitly configured.
-import ipaddress
 
 _trusted_proxy_value = os.environ.get("TRUSTED_PROXY_IPS", "").strip()
 try:
