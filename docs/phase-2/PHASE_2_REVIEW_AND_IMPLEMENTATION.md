@@ -4,7 +4,7 @@
 > Project: `kiran1262/payment-processing-system`  
 > Base: `main` (PR #4 merged)  
 > Working branch: `feat/phase-2-rate-limiting-abuse-controls`  
-> Status: **Implementation in progress; CI and final review pending**  
+> Status: **Implementation in progress; CI green; final review pending**  
 > Scope: API rate limiting and abuse controls. This document is updated as findings are verified and fixes land.
 
 ---
@@ -133,21 +133,28 @@ These are conservative demo defaults, not universal production recommendations. 
 
 ## 7. Test plan
 
-- [ ] Registration: allow up to limit, then 429; no tenant created by blocked request.
-- [ ] Login: invalid credentials still count; blocked attempts do not execute password verification unnecessarily.
-- [ ] Login: same IP limit applies regardless of target email; account bucket does not reveal whether email exists.
-- [ ] Payment creation: authenticated user limit applies; different tenants/users have isolated buckets.
-- [ ] Refund: owner permission check remains authoritative; member 403 does not mutate payment or bypass role checks.
-- [ ] Reads: each read action has intended policy; payment list query cap remains enforced.
-- [ ] 429 response includes valid `Retry-After` and safe error body.
-- [ ] Window reset / expiry is deterministic under injected clock.
+- [x] Registration: blocked request returns 429 before tenant creation handler runs.
+- [x] Login: invalid credentials count toward the IP budget; a subsequent attempt is blocked. Dependency ordering prevents the login handler from running after the limit is exceeded.
+- [x] Login: same socket IP limit applies across different target emails; spoofed `X-Forwarded-For` does not change identity.
+- [x] Payment creation: authenticated user/tenant limit applies; another authenticated tenant has an independent bucket.
+- [x] Refund and owner-only member creation have independent action budgets; existing member 403 authorization tests remain green.
+- [x] Profile, dashboard, payment list, and payment detail share the authenticated read budget; existing list-size validation remains green.
+- [x] 429 response includes positive integer `Retry-After` and a generic error body.
+- [x] Fixed-window reset and retry countdown are deterministic under an injected timestamp.
 - [ ] Concurrent increments cannot exceed the configured allowance through lost updates.
-- [ ] Database/storage failure behavior matches documented policy.
-- [ ] Spoofed `X-Forwarded-For` does not change identity unless trusted proxy mode is explicitly enabled.
-- [ ] Expired bucket cleanup does not reset a live bucket.
-- [ ] Frontend handles 429 and preserves retry/idempotency state.
-- [ ] Existing auth, tenant, migration, payment, refund, and idempotency tests pass.
-- [ ] Alembic upgrade from prior head succeeds and `alembic check` detects no model drift.
+- [x] Limiter storage failure fails closed with generic 503 and `Retry-After: 5`.
+- [x] Spoofed `X-Forwarded-For` is ignored; direct ASGI socket peer is used.
+- [x] Expired bucket cleanup removes expired buckets; a live bucket remains until its expiry.
+- [x] Frontend reads `Retry-After` and displays retry guidance; payment idempotency persistence remains covered by the existing Phase 1 regression test.
+- [x] Existing auth, tenant, migration, payment, refund, and idempotency tests pass in the full suite.
+- [x] Alembic fresh upgrade and model drift check pass in the migration test suite.
+
+### Not yet proven / remaining acceptance work
+
+- [ ] PostgreSQL multi-process concurrency and high-contention tests (tracked for Phase 6).
+- [ ] Schedule bucket cleanup in deployment operations; no scheduler is wired into this demo.
+- [ ] Decide production trusted-proxy hop configuration.
+- [ ] Calibrate policies against expected traffic and production infrastructure.
 
 ## 8. Phase 2 implementation log
 
@@ -169,7 +176,7 @@ These are conservative demo defaults, not universal production recommendations. 
 
 ### Residual risks / items not yet proven
 
-- GitHub Actions on the initial implementation commit passed 41 tests; additional route coverage and the HMAC key change are being added, so the latest head must pass CI again before Phase 2 can be marked complete.
+- GitHub Actions passed **45 tests, 1 warning** on code/test commit `9bc3984559092183cc3e4a83f105a4108601c308`; `node --check frontend/app.js` also passed. A later documentation-only commit still needs its own latest-head CI confirmation.
 - Fixed-window counters permit a burst across adjacent window boundaries; token-bucket/sliding-window behavior may be preferable for a production deployment.
 - The shared limiter currently uses the primary database. This creates database contention and means limiter availability is coupled to database availability.
 - Expired-bucket cleanup is exposed as a function but no scheduler/maintenance command is wired yet; production operations must schedule it.
