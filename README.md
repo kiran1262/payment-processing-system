@@ -141,7 +141,7 @@ Expired bucket cleanup is available as a bounded command: python -m app.maintena
 | GET | /api/health | Public liveness probe |
 | GET | /api/ready | Public database readiness probe |
 | POST | /api/auth/register | Publicly create a new tenant and its first owner; IP rate-limited |
-| POST | /api/auth/login | Public login; returns a bearer token; IP rate-limited |
+| POST | /api/auth/login | Public login; returns a bearer token; IP, network-prefix, and account rate-limited |
 | GET | /api/auth/me | Authenticated user and workspace profile |
 | POST | /api/auth/logout | Authenticated session revocation |
 | POST | /api/tenant/members | Owner-only member creation; user rate-limited |
