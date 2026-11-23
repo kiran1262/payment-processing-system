@@ -11,7 +11,7 @@
 <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
 <div class="shell">
   <aside class="sidebar">
-    <a class="brand" href="#"><span class="brand-icon">✦</span><span>Payment<small>PAYMENT INFRASTRUCTURE</small></span></a>
+    <a class="brand" href="#"><span class="brand-icon">✦</span><span>Payment<small>PAYMENT SIMULATION</small></span></a>
     <div class="workspace"><span class="avatar">K</span><span><b>Kirankumar's Store</b><small>Test workspace</small></span><span class="chevron">⌄</span></div>
     <p class="nav-label">WORKSPACE</p>
     <a class="nav active" href="#overview"><span>▦</span> Overview</a>
@@ -48,7 +48,7 @@
     </section>
     <section class="panel transactions-panel" id="transactions"><div class="panel-heading"><div><h2>Recent transactions</h2><p>A live view of your latest payment activity</p></div><button class="outline-btn" id="refreshBtn">↻ Refresh</button></div><div class="table-wrap"><table><thead><tr><th>PAYMENT</th><th>CUSTOMER</th><th>DATE</th><th>METHOD</th><th>AMOUNT</th><th>STATUS</th><th></th></tr></thead><tbody id="transactionRows"><tr><td colspan="7" class="empty">No transactions yet. Create your first payment.</td></tr></tbody></table></div></section>
     <section class="panel create-panel" id="payments"><div class="panel-heading"><div><h2>Create a payment</h2><p>Run a safe simulated transaction in the demo environment</p></div><span class="demo-pill">● DEMO MODE</span></div>
-      <form id="paymentForm"><div class="form-grid"><label>Customer name<input name="customer_name" placeholder="e.g. Alex Morgan" required minlength="2"></label><label>Email address<input name="customer_email" type="email" placeholder="alex@example.com" required></label><label>Amount (INR)<div class="amount-input"><span>₹</span><input name="amount" type="number" min="1" max="500000" step=".01" placeholder="2499.00" required></div></label><label>Payment method<select name="method"><option>UPI</option><option>Card</option><option>Wallet</option><option>Net Banking</option></select></label><label class="full">Description<input name="description" placeholder="Order payment"></label></div><div class="form-footer"><span>◈ Encrypted demo request · No real funds move</span><button class="primary-btn" type="submit" id="payBtn">Process payment <span>→</span></button></div><p id="formMessage" class="form-message" role="status"></p></form>
+      <form id="paymentForm"><div class="form-grid"><label>Customer name<input name="customer_name" placeholder="e.g. Alex Morgan" required minlength="2"></label><label>Email address<input name="customer_email" type="email" placeholder="alex@example.com" required></label><label>Amount (INR)<div class="amount-input"><span>₹</span><input name="amount" type="number" min="1" max="500000" step=".01" placeholder="2499.00" required></div></label><label>Payment method<select name="method"><option>UPI</option><option>Card</option><option>Wallet</option><option>Net Banking</option></select></label><label class="full">Description<input name="description" placeholder="Order payment"></label></div><div class="form-footer"><span>◈ Simulated request · No real funds move</span><button class="primary-btn" type="submit" id="payBtn">Process payment <span>→</span></button></div><p id="formMessage" class="form-message" role="status"></p></form>
     </section>
     <footer><span>✦ Payment <small>PAYMENT INFRASTRUCTURE</small></span><span>Educational simulation · No real payments</span><a href="/docs" target="_blank">API documentation ↗</a></footer>
   </main>
