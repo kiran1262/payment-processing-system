@@ -122,3 +122,31 @@ def test_frontend_reuses_idempotency_key_for_same_retry_payload():
     assert 'sessionStorage.setItem("pending_payment_key",key)' in source
     assert "previousFingerprint!==requestFingerprint" in source
     assert 'sessionStorage.removeItem("pending_payment_key")' in source
+
+def test_expired_bearer_session_is_rejected(client):
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select
+    from app.auth import token_digest
+    from app.models import AuthSession
+
+    token = client.headers["Authorization"].split(" ", 1)[1]
+    dependency = app.dependency_overrides[get_db]
+    generator = dependency()
+    db = next(generator)
+    try:
+        session = db.scalar(select(AuthSession).where(AuthSession.token_hash == token_digest(token)))
+        session.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        db.commit()
+    finally:
+        generator.close()
+    assert client.get("/api/auth/me").status_code == 401
+
+def test_frontend_avoids_unsubstantiated_security_claims():
+    source = (Path(__file__).resolve().parents[1] / "frontend" / "index.html").read_text()
+    lowered = source.lower()
+    assert "move money with confidence" not in lowered
+    assert "secure payment" not in lowered
+    assert "encrypted demo request" not in lowered
+    assert "all systems operational" not in lowered
+    assert "illustrative activity" in lowered
+    assert "no real payments" in lowered
